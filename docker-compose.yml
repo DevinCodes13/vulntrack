@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vulntrack-postgres
+    environment:
+      POSTGRES_DB: vulntrack
+      POSTGRES_USER: vulntrack
+      POSTGRES_PASSWORD: vulntrack_dev_pw
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  wildfly:
+    build: .
+    container_name: vulntrack-wildfly
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+      - "9990:9990"
+    volumes:
+      - ./target/vulntrack.war:/opt/jboss/wildfly/standalone/deployments/vulntrack.war
+    command: ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "0.0.0.0"]
+
+volumes:
+  pgdata:

@@ -1,0 +1,4 @@
+embed-server --std-out=echo
+/subsystem=datasources/jdbc-driver=postgresql:add(driver-name=postgresql,driver-module-name=org.postgresql,driver-class-name=org.postgresql.Driver,driver-xa-datasource-class-name=org.postgresql.xa.PGXADataSource)
+data-source add --name=VulnTrackDS --jndi-name=java:jboss/datasources/VulnTrackDS --driver-name=postgresql --connection-url=jdbc:postgresql://postgres:5432/vulntrack --user-name=vulntrack --password=vulntrack_dev_pw --min-pool-size=5 --max-pool-size=20 --enabled=true
+stop-embedded-server
