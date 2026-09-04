@@ -4,8 +4,9 @@ resource "random_password" "jwt_secret" {
 }
 
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name        = "vulntrack/db-credentials"
-  description = "PostgreSQL connection details for VulnTrack"
+  name                    = "vulntrack/db-credentials"
+  description             = "PostgreSQL connection details for VulnTrack"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {
@@ -20,8 +21,9 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
 }
 
 resource "aws_secretsmanager_secret" "jwt_key" {
-  name        = "vulntrack/jwt-signing-key"
-  description = "HMAC signing key for VulnTrack JWTs"
+  name                    = "vulntrack/jwt-signing-key"
+  description             = "HMAC signing key for VulnTrack JWTs"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "jwt_key" {
