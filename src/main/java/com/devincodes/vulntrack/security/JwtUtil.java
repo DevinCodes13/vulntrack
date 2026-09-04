@@ -8,10 +8,14 @@ import java.util.Date;
 
 public class JwtUtil {
 
-    // NOTE: hardcoded for development only. In Phase 4 this moves to
-    // AWS Secrets Manager / an environment variable, not source code.
+    // Reads JWT_SIGNING_KEY from the environment (injected by ECS from
+    // AWS Secrets Manager in production). Falls back to a dev-only value
+    // for local Docker Compose runs where that variable isn't set.
     private static final SecretKey KEY = Keys.hmacShaKeyFor(
-            "dev-only-secret-key-change-this-before-any-real-deployment!".getBytes());
+            System.getenv().getOrDefault(
+                    "JWT_SIGNING_KEY",
+                    "dev-only-secret-key-change-this-before-any-real-deployment!"
+            ).getBytes());
 
     private static final long EXPIRATION_MS = 1000 * 60 * 60; // 1 hour
 
