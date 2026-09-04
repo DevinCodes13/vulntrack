@@ -1,0 +1,4 @@
+# Copy this file to terraform.tfvars and fill in your actual values.
+# terraform.tfvars is gitignored — never commit real values.
+
+container_image = "825990809758.dkr.ecr.us-east-2.amazonaws.com/vulntrack:latest"
