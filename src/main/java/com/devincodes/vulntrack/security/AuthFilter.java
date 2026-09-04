@@ -24,7 +24,8 @@ public class AuthFilter implements ContainerRequestFilter {
         String path = ctx.getUriInfo().getPath();
 
         // Let login/register through without a token
-        if (path.startsWith("auth/") || path.startsWith("/auth/")) {
+        if (path.startsWith("auth/") || path.startsWith("/auth/")
+                || path.equals("ping") || path.equals("/ping")) {
             return;
         }
 
