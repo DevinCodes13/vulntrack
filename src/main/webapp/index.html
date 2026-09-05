@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VulnTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy-950: #0f172a;
+    --navy-900: #16213a;
+    --navy-800: #1e2b4a;
+    --slate-300: #b6c0d4;
+    --slate-100: #e9edf5;
+    --sev-critical: #d64545;
+    --sev-high: #e08a3c;
+    --sev-medium: #d6b03c;
+    --sev-low: #4a90c4;
+    --status-open: #d64545;
+    --status-remediated: #4a9d6b;
+    --status-accepted: #8a8fa3;
+    --border: #2a3a5c;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--navy-950);
+    color: var(--slate-100);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  header.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand {
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: 0.01em;
+  }
+
+  .brand span { color: var(--slate-300); font-weight: 400; }
+
+  .session-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    color: var(--slate-300);
+  }
+
+  .role-pill {
+    padding: 3px 9px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--navy-800);
+    color: var(--slate-100);
+    padding: 8px 16px;
+    transition: border-color 0.15s ease;
+  }
+
+  button:hover { border-color: var(--slate-300); }
+  button:focus-visible, input:focus-visible, a:focus-visible {
+    outline: 2px solid var(--slate-300);
+    outline-offset: 2px;
+  }
+
+  button.primary {
+    background: var(--navy-800);
+    border-color: #3d5583;
+  }
+
+  main { max-width: 980px; margin: 0 auto; padding: 40px 28px; }
+
+  /* --- Auth screen --- */
+  .auth-wrap {
+    max-width: 380px;
+    margin: 80px auto 0;
+    padding: 32px;
+    background: var(--navy-900);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .auth-wrap h1 { font-size: 20px; margin: 0 0 6px; }
+  .auth-wrap p.sub { color: var(--slate-300); font-size: 13px; margin: 0 0 24px; }
+
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--slate-300);
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 9px 11px;
+    margin-bottom: 16px;
+    background: var(--navy-950);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--slate-100);
+    font-family: inherit;
+    font-size: 14px;
+  }
+
+  .auth-toggle {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--slate-300);
+  }
+
+  .auth-toggle a { color: var(--slate-100); cursor: pointer; text-decoration: underline; }
+
+  .error-msg {
+    background: rgba(214, 69, 69, 0.12);
+    border: 1px solid rgba(214, 69, 69, 0.4);
+    color: #f0a8a8;
+    padding: 9px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  /* --- Dashboard --- */
+  .dash-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .dash-head h1 { font-size: 19px; margin: 0; }
+  .dash-head .count { color: var(--slate-300); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  th {
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--slate-300);
+    padding: 0 12px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 13px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid transparent;
+  }
+
+  .sev-CRITICAL, .sev-critical { background: rgba(214,69,69,0.15); color: var(--sev-critical); border-color: rgba(214,69,69,0.35); }
+  .sev-HIGH, .sev-high { background: rgba(224,138,60,0.15); color: var(--sev-high); border-color: rgba(224,138,60,0.35); }
+  .sev-MEDIUM, .sev-medium { background: rgba(214,176,60,0.15); color: var(--sev-medium); border-color: rgba(214,176,60,0.35); }
+  .sev-LOW, .sev-low { background: rgba(74,144,196,0.15); color: var(--sev-low); border-color: rgba(74,144,196,0.35); }
+
+  .st-OPEN { color: var(--status-open); }
+  .st-REMEDIATED { color: var(--status-remediated); }
+  .st-ACCEPTED_RISK, .st-ACCEPTED { color: var(--status-accepted); }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--slate-300);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+  }
+
+  .empty-state p:first-child { color: var(--slate-100); font-size: 15px; margin-bottom: 6px; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="topbar" id="topbar" hidden>
+  <div class="brand">VulnTrack <span>/ asset &amp; vulnerability tracker</span></div>
+  <div class="session-info">
+    <span id="userLabel"></span>
+    <span class="role-pill" id="roleLabel"></span>
+    <button id="logoutBtn">Log out</button>
+  </div>
+</header>
+
+<main>
+  <!-- Auth screen -->
+  <div class="auth-wrap" id="authScreen">
+    <h1 id="authTitle">Log in</h1>
+    <p class="sub" id="authSub">Access your findings dashboard.</p>
+
+    <div class="error-msg" id="authError" hidden></div>
+
+    <form id="authForm">
+      <label for="username">Username</label>
+      <input type="text" id="username" autocomplete="username" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+
+      <button type="submit" class="primary" id="authSubmit" style="width:100%">Log in</button>
+    </form>
+
+    <div class="auth-toggle" id="authToggle">
+      Need an account? <a id="toggleLink">Register</a>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" hidden>
+    <div class="dash-head">
+      <h1>Findings</h1>
+      <span class="count" id="findingsCount"></span>
+    </div>
+    <div id="findingsContainer"></div>
+  </div>
+</main>
+
+<script>
+  const API = '/vulntrack/api';
+  let token = sessionStorage.getItem('vulntrack_token');
+  let mode = 'login'; // or 'register'
+
+  const authScreen = document.getElementById('authScreen');
+  const dashboard = document.getElementById('dashboard');
+  const topbar = document.getElementById('topbar');
+  const authForm = document.getElementById('authForm');
+  const authError = document.getElementById('authError');
+  const authTitle = document.getElementById('authTitle');
+  const authSub = document.getElementById('authSub');
+  const authSubmit = document.getElementById('authSubmit');
+  const toggleLink = document.getElementById('toggleLink');
+  const authToggle = document.getElementById('authToggle');
+
+  function decodeRole(jwt) {
+    try {
+      const payload = JSON.parse(atob(jwt.split('.')[1]));
+      return { username: payload.sub, role: payload.role };
+    } catch (e) {
+      return { username: '', role: '' };
+    }
+  }
+
+  function showError(msg) {
+    authError.textContent = msg;
+    authError.hidden = false;
+  }
+
+  function setMode(next) {
+    mode = next;
+    authError.hidden = true;
+    authForm.reset();
+    if (mode === 'login') {
+      authTitle.textContent = 'Log in';
+      authSub.textContent = 'Access your findings dashboard.';
+      authSubmit.textContent = 'Log in';
+      authToggle.innerHTML = 'Need an account? <a id="toggleLink">Register</a>';
+    } else {
+      authTitle.textContent = 'Register';
+      authSub.textContent = 'Create an analyst account.';
+      authSubmit.textContent = 'Create account';
+      authToggle.innerHTML = 'Already have an account? <a id="toggleLink">Log in</a>';
+    }
+    document.getElementById('toggleLink').addEventListener('click', () => setMode(mode === 'login' ? 'register' : 'login'));
+  }
+  toggleLink.addEventListener('click', () => setMode('register'));
+
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.hidden = true;
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      if (mode === 'register') {
+        const res = await fetch(`${API}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, role: 'ANALYST' })
+        });
+        if (!res.ok) { showError('Could not create that account. Try a different username.'); return; }
+        setMode('login');
+        showError('Account created — log in below.');
+        authError.style.color = '#a8d0b8';
+        return;
+      }
+
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!res.ok) { showError('Incorrect username or password.'); return; }
+      const data = await res.json();
+      token = data.token;
+      sessionStorage.setItem('vulntrack_token', token);
+      enterDashboard();
+    } catch (err) {
+      showError('Could not reach the server. Is the API running?');
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    sessionStorage.removeItem('vulntrack_token');
+    token = null;
+    dashboard.hidden = true;
+    topbar.hidden = true;
+    authScreen.hidden = false;
+    setMode('login');
+  });
+
+  function severityBadge(sev) {
+    if (!sev) return '';
+    return `<span class="badge sev-${sev}">${sev}</span>`;
+  }
+
+  function statusLabel(st) {
+    if (!st) return '';
+    return `<span class="st-${st}">${st.replace('_', ' ')}</span>`;
+  }
+
+  async function loadFindings() {
+    const container = document.getElementById('findingsContainer');
+    const countEl = document.getElementById('findingsCount');
+    try {
+      const res = await fetch(`${API}/findings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) { logoutSilently(); return; }
+      const findings = await res.json();
+      countEl.textContent = `${findings.length} total`;
+
+      if (findings.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>No findings yet</p>
+            <p>Findings created via the API will appear here.</p>
+          </div>`;
+        return;
+      }
+
+      const rows = findings.map(f => `
+        <tr>
+          <td>${f.asset ? f.asset.hostname : '—'}</td>
+          <td class="mono">${f.vulnerability ? f.vulnerability.cveId : '—'}</td>
+          <td>${severityBadge(f.vulnerability ? f.vulnerability.severity : null)}</td>
+          <td>${statusLabel(f.status)}</td>
+          <td>${f.remediationDeadline || '—'}</td>
+          <td>${f.assignedUser ? f.assignedUser.username : 'Unassigned'}</td>
+        </tr>
+      `).join('');
+
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>CVE</th>
+              <th>Severity</th>
+              <th>Status</th>
+              <th>Deadline</th>
+              <th>Assigned to</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><p>Could not load findings</p><p>Check that the API is reachable.</p></div>`;
+    }
+  }
+
+  function logoutSilently() {
+    sessionStorage.removeItem('vulntrack_token');
+    token = null;
+    dashboard.hidden = true;
+    topbar.hidden = true;
+    authScreen.hidden = false;
+    setMode('login');
+  }
+
+  function enterDashboard() {
+    const { username, role } = decodeRole(token);
+    document.getElementById('userLabel').textContent = username;
+    document.getElementById('roleLabel').textContent = role;
+    authScreen.hidden = true;
+    topbar.hidden = false;
+    dashboard.hidden = false;
+    loadFindings();
+  }
+
+  setMode('login');
+  if (token) enterDashboard();
+</script>
+
+</body>
+</html>

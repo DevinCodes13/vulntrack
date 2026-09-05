@@ -47,7 +47,7 @@ public class FindingResource {
         f.setVulnerability(vuln);
         f.setAssignedUser(user);
         f.setStatus(input.status);
-        f.setRemediationDeadline(input.remediationDeadline);
+        f.setRemediationDeadline(input.remediationDeadline != null ?    java.time.LocalDate.parse(input.remediationDeadline) : null);
         em.persist(f);
         return Response.status(Response.Status.CREATED).entity(f).build();
     }
@@ -63,7 +63,7 @@ public class FindingResource {
         if (input.vulnerabilityId != null) existing.setVulnerability(em.find(Vulnerability.class, input.vulnerabilityId));
         if (input.assignedUserId != null) existing.setAssignedUser(em.find(AppUser.class, input.assignedUserId));
         if (input.status != null) existing.setStatus(input.status);
-        if (input.remediationDeadline != null) existing.setRemediationDeadline(input.remediationDeadline);
+        if (input.remediationDeadline != null) existing.setRemediationDeadline(java.time.LocalDate.parse(input.remediationDeadline));
 
         return Response.ok(existing).build();
     }
