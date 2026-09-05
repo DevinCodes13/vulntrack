@@ -200,6 +200,34 @@ no manual admin-console clicking required to stand up a working environment.
 
 ---
 
+## CI/CD pipeline
+
+Every push to `main` triggers [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which:
+
+1. Builds the app with Maven
+2. Authenticates to AWS via **OIDC** — GitHub Actions assumes a scoped IAM
+   role (`github-actions-vulntrack-deploy`) using a short-lived identity
+   token, with **no long-lived AWS credentials stored in GitHub at all**
+3. Builds the Docker image and pushes it to ECR (tagged both `latest` and
+   with the commit SHA)
+4. Forces a new ECS deployment and waits for the service to report stable
+   before the workflow finishes
+
+The IAM role's trust policy is scoped specifically to
+`repo:DevinCodes13/vulntrack` on the `main` branch — no other repository or
+branch can assume it, even if the OIDC provider were somehow reused
+elsewhere in the account.
+
+![CI/CD pipeline success](docs/screenshots/PLACEHOLDER-actions-success.png)
+*A full build → push → deploy run completing successfully, triggered
+automatically by a `git push`*
+
+> **Note on the live URL**: the ALB's public DNS name changes every time
+> the infrastructure is destroyed and recreated via Terraform (a deliberate
+> cost-control choice — the environment isn't left running 24/7). The
+> current URL is available via `terraform output alb_dns_name` after an
+> apply, rather than hardcoded here.
+
 ## Troubleshooting log & lessons learned
 
 Kept here rather than smoothed over, since debugging real infrastructure
@@ -231,6 +259,37 @@ issues is a meaningful part of what this project demonstrates.
 - **Notepad silently appends `.txt`** to filenames without a recognized
   extension (e.g. `Dockerfile` → `Dockerfile.txt`) unless the filename is
   quoted in the Save As dialog or "All Files" is selected explicitly.
+- **WildFly's embedded-server CLI bootstrap can silently prevent real
+  deployment.** Copying the WAR into `standalone/deployments/` *before*
+  running the offline `datasource.cli` configuration step causes WildFly to
+  auto-deploy it during that embedded boot and bake an "already deployed"
+  marker into the image layer — so the real container never deploys the app
+  at runtime, with no error logged anywhere. Fixed by sequencing the
+  Dockerfile so the WAR is copied in only *after* the CLI step completes.
+- **ALB health checks cannot carry authentication headers.** Once JWT auth
+  was added, the load balancer's health check to `/api/ping` started
+  failing with 401s, since it can't present a bearer token. The health
+  check endpoint has to be explicitly exempted from the auth filter —
+  a good reminder that infrastructure health monitoring and application
+  security are different concerns with different requirements.
+- **GitHub's OIDC token `sub` claim format changed** to include immutable
+  numeric owner/repo IDs (`repo:owner@org_id/repo@repo_id:ref:...`) rather
+  than plain names, which broke an exact-match IAM trust policy written
+  against the older format. Diagnosed via CloudTrail's `AssumeRoleWithWebIdentity`
+  event history (the `principalId` field shows the exact string GitHub
+  sent) rather than guessing from the generic "not authorized" error.
+  Resolved with a `StringLike` wildcard pattern that tolerates both formats.
+- **A region placeholder in an IAM policy resource ARN went uncorrected**
+  (`us-east-1` instead of the actual `us-east-2`), causing the GitHub
+  Actions role to authenticate successfully via OIDC but still be denied
+  `ecr:InitiateLayerUpload` — a reminder that region-scoped ARNs in policy
+  templates need to be checked against the actual deployment region, not
+  left as a generic placeholder.
+- **Destroying and recreating Secrets Manager entries hits AWS's default
+  30-day recovery window** — a `terraform destroy` schedules secrets for
+  deletion rather than purging them immediately, so a following
+  `terraform apply` fails with "already scheduled for deletion." Setting
+  `recovery_window_in_days = 0` makes destroy/recreate cycles clean.
 
 ---
 
@@ -240,7 +299,8 @@ issues is a meaningful part of what this project demonstrates.
 - [x] Phase 2 — PostgreSQL integration via custom WildFly datasource module
 - [x] Phase 3 — JPA entity model, full CRUD REST API
 - [x] Phase 3.5 — JWT authentication, bcrypt password hashing, role-based access control
-- [ ] Phase 4 — CI/CD pipeline (GitHub Actions → AWS ECR/ECS), infrastructure as code (Terraform), TLS, secrets management, dashboard UI
+- [x] Phase 4 — Infrastructure as code (Terraform: VPC, RDS, ECS Fargate, ALB, Secrets Manager), OIDC-based GitHub Actions CI/CD pipeline (build → push to ECR → deploy to ECS), verified live end-to-end
+- [ ] Phase 4+ — TLS/HTTPS on the ALB, a dashboard UI, tightened IAM scoping on remaining broad grants
 
 ---
 
