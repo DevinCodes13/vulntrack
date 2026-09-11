@@ -92,3 +92,19 @@ output "rds_endpoint" {
   value     = aws_db_instance.main.address
   sensitive = true
 }
+
+resource "random_password" "jwt_secret" {
+  length  = 48
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "jwt_key" {
+  name                    = "vulntrack-eks/jwt-signing-key"
+  description             = "HMAC signing key for VulnTrack JWTs on EKS"
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "jwt_key" {
+  secret_id     = aws_secretsmanager_secret.jwt_key.id
+  secret_string = random_password.jwt_secret.result
+}
