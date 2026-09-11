@@ -7,7 +7,12 @@ drivers/
 .DS_Store
 Thumbs.db
 
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/terraform.tfvars
+terraform-ecs/.terraform/
+terraform-ecs/*.tfstate
+terraform-ecs/*.tfstate.backup
+terraform-ecs/terraform.tfvars
+
+terraform-eks/.terraform/
+terraform-eks/*.tfstate
+terraform-eks/*.tfstate.backup
+terraform-eks/terraform.tfvars

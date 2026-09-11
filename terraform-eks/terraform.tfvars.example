@@ -1,0 +1,6 @@
+# Copy this file to terraform.tfvars if you need to override any defaults.
+# terraform.tfvars is gitignored — never commit real values, though nothing
+# in this config is actually sensitive by default.
+
+# Example override if a newer/older EKS version is needed:
+# cluster_version = "1.31"
