@@ -31,7 +31,7 @@ variable "azs" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS control plane. Verify this is still supported in the AWS Console before applying — EKS deprecates old versions on a rolling basis."
   type        = string
-  default     = "1.30"
+  default     = "1.31"
 }
 
 variable "node_instance_types" {
