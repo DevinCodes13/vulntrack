@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vulntrack
+  namespace: default
+spec:
+  selector:
+    app: vulntrack
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

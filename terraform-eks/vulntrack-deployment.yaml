@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulntrack
+  namespace: default
+  labels:
+    app: vulntrack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vulntrack
+  template:
+    metadata:
+      labels:
+        app: vulntrack
+    spec:
+      containers:
+        - name: vulntrack
+          image: 825990809758.dkr.ecr.us-east-2.amazonaws.com/vulntrack:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: vulntrack-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "768Mi"
+          readinessProbe:
+            httpGet:
+              path: /vulntrack/api/ping
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /vulntrack/api/ping
+              port: 8080
+            initialDelaySeconds: 45
+            periodSeconds: 20
