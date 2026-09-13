@@ -1,0 +1,19 @@
+provider:
+  name: aws
+
+sources:
+  - ingress
+
+logLevel: debug
+
+domainFilters:
+  - aws.vulntrack.app
+
+policy: sync
+txtOwnerId: vulntrack-eks
+
+serviceAccount:
+  create: true
+  name: external-dns
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::825990809758:role/vulntrack-eks-external-dns-role
