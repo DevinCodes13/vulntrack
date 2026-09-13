@@ -11,8 +11,9 @@ permissions:
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: vulntrack
-  ECS_CLUSTER: vulntrack-cluster
-  ECS_SERVICE: vulntrack-service
+  EKS_CLUSTER: vulntrack-eks
+  K8S_NAMESPACE: default
+  K8S_DEPLOYMENT: vulntrack
 
 jobs:
   build-and-deploy:
@@ -51,17 +52,22 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Force new ECS deployment
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.30.0'
 
-      - name: Wait for service to stabilize
+      - name: Point kubectl at the EKS cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+
+      - name: Deploy to EKS
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --region ${{ env.AWS_REGION }}
+          kubectl rollout restart deployment/${{ env.K8S_DEPLOYMENT }} -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} -n ${{ env.K8S_NAMESPACE }} --timeout=180s
+
+  # NOTE: this pipeline currently targets EKS, the active architecture as of
+  # Phase 5. The original ECS deployment steps (aws ecs update-service /
+  # wait services-stable) are preserved in this repo's git history and in
+  # terraform-ecs/ for anyone wanting to stand that environment back up —
+  # this workflow just isn't wired to redeploy to it automatically anymore,
+  # since ECS was decommissioned once EKS became the primary demo target.
