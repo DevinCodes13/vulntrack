@@ -1,0 +1,35 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: vulntrack-gateway
+  namespace: default
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "aws.vulntrack.app"
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: vulntrack
+  namespace: default
+spec:
+  hosts:
+    - "aws.vulntrack.app"
+  gateways:
+    - vulntrack-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: vulntrack
+            port:
+              number: 80
