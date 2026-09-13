@@ -6,34 +6,45 @@
 <title>VulnTrack</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   :root {
     --navy-950: #0f172a;
     --navy-900: #16213a;
+    --navy-850: #192544;
     --navy-800: #1e2b4a;
     --slate-300: #b6c0d4;
     --slate-100: #e9edf5;
-    --sev-critical: #d64545;
+    --sev-critical: #e0555a;
     --sev-high: #e08a3c;
     --sev-medium: #d6b03c;
     --sev-low: #4a90c4;
-    --status-open: #d64545;
+    --status-open: #e0555a;
     --status-remediated: #4a9d6b;
     --status-accepted: #8a8fa3;
     --border: #2a3a5c;
+    --border-soft: #22304f;
+    --focus: #6ea8e0;
   }
 
   * { box-sizing: border-box; }
 
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
   body {
     margin: 0;
     background: var(--navy-950);
+    background-image:
+      radial-gradient(1200px 500px at 15% -10%, rgba(74,144,196,0.06), transparent 60%),
+      radial-gradient(900px 400px at 100% 0%, rgba(224,85,90,0.04), transparent 55%);
     color: var(--slate-100);
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     font-size: 15px;
     line-height: 1.5;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
   }
 
   .mono { font-family: 'IBM Plex Mono', monospace; }
@@ -42,118 +53,160 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 28px;
-    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border-soft);
+    backdrop-filter: blur(6px);
   }
 
-  .brand {
-    font-weight: 600;
-    font-size: 17px;
-    letter-spacing: 0.01em;
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    background: linear-gradient(160deg, var(--navy-800), var(--navy-850));
+    border: 1px solid var(--border);
   }
+  .brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+  .brand-sub { color: var(--slate-300); font-weight: 400; font-size: 13px; margin-left: 8px; }
 
-  .brand span { color: var(--slate-300); font-weight: 400; }
-
-  .session-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    font-size: 13px;
-    color: var(--slate-300);
-  }
+  .session-info { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--slate-300); }
 
   .role-pill {
     padding: 3px 9px;
     border-radius: 3px;
     border: 1px solid var(--border);
-    font-size: 12px;
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    color: var(--slate-300);
   }
 
   button {
     font-family: inherit;
     font-size: 14px;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 5px;
     border: 1px solid var(--border);
     background: var(--navy-800);
     color: var(--slate-100);
     padding: 8px 16px;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, transform 0.08s ease, background 0.15s ease;
   }
 
-  button:hover { border-color: var(--slate-300); }
-  button:focus-visible, input:focus-visible, a:focus-visible {
-    outline: 2px solid var(--slate-300);
+  button:hover { border-color: #3d5583; background: var(--navy-850); }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.55; cursor: default; transform: none; }
+
+  button:focus-visible, input:focus-visible, a:focus-visible, th.sortable:focus-visible {
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 
-  button.primary {
-    background: var(--navy-800);
-    border-color: #3d5583;
+  button.primary { background: var(--navy-800); border-color: #3d5583; }
+  button.icon-btn {
+    padding: 7px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  main { max-width: 980px; margin: 0 auto; padding: 40px 28px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 40px 28px 80px; }
 
   /* --- Auth screen --- */
   .auth-wrap {
-    max-width: 380px;
-    margin: 80px auto 0;
-    padding: 32px;
+    max-width: 400px;
+    margin: 72px auto 0;
+    padding: 36px;
     background: var(--navy-900);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
+    animation: rise-in 0.4s ease both;
   }
 
-  .auth-wrap h1 { font-size: 20px; margin: 0 0 6px; }
-  .auth-wrap p.sub { color: var(--slate-300); font-size: 13px; margin: 0 0 24px; }
-
-  label {
-    display: block;
-    font-size: 13px;
-    color: var(--slate-300);
-    margin-bottom: 6px;
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
   }
+
+  .auth-icon {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    background: linear-gradient(160deg, var(--navy-800), var(--navy-850));
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+
+  .auth-wrap h1 { font-size: 21px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .auth-wrap p.sub { color: var(--slate-300); font-size: 13.5px; margin: 0 0 26px; }
+
+  label { display: block; font-size: 13px; color: var(--slate-300); margin-bottom: 6px; }
 
   input {
     width: 100%;
-    padding: 9px 11px;
+    padding: 10px 12px;
     margin-bottom: 16px;
     background: var(--navy-950);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 5px;
     color: var(--slate-100);
     font-family: inherit;
     font-size: 14px;
+    transition: border-color 0.15s ease;
   }
+  input:focus { border-color: var(--focus); outline: none; }
 
-  .auth-toggle {
-    margin-top: 18px;
-    font-size: 13px;
-    color: var(--slate-300);
-  }
+  .auth-toggle { margin-top: 18px; font-size: 13px; color: var(--slate-300); }
+  .auth-toggle a { color: var(--slate-100); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
-  .auth-toggle a { color: var(--slate-100); cursor: pointer; text-decoration: underline; }
-
-  .error-msg {
-    background: rgba(214, 69, 69, 0.12);
-    border: 1px solid rgba(214, 69, 69, 0.4);
-    color: #f0a8a8;
-    padding: 9px 12px;
-    border-radius: 4px;
+  .banner {
+    padding: 10px 13px;
+    border-radius: 5px;
     font-size: 13px;
     margin-bottom: 16px;
+    border: 1px solid transparent;
   }
+  .banner.error { background: rgba(224,85,90,0.1); border-color: rgba(224,85,90,0.35); color: #f2a5a8; }
+  .banner.success { background: rgba(74,157,107,0.1); border-color: rgba(74,157,107,0.35); color: #a8d6b8; }
 
   /* --- Dashboard --- */
+  #dashboard { animation: rise-in 0.35s ease both; }
+
   .dash-head {
     display: flex;
-    align-items: baseline;
+    align-items: flex-end;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+    gap: 12px;
   }
+  .dash-head h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .dash-head .sub { color: var(--slate-300); font-size: 13px; margin-top: 3px; }
+  .dash-actions { display: flex; align-items: center; gap: 10px; }
+  .last-updated { font-size: 12px; color: var(--slate-300); }
 
-  .dash-head h1 { font-size: 19px; margin: 0; }
-  .dash-head .count { color: var(--slate-300); font-size: 13px; }
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 720px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--navy-900);
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    padding: 14px 16px;
+  }
+  .stat-card .num { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; line-height: 1; }
+  .stat-card .lbl { font-size: 12px; color: var(--slate-300); margin-top: 6px; }
+  .stat-card.stat-total .num { color: var(--slate-100); }
+  .stat-card.stat-critical .num { color: var(--sev-critical); }
+  .stat-card.stat-high .num { color: var(--sev-high); }
+  .stat-card.stat-medium .num { color: var(--sev-medium); }
+  .stat-card.stat-low .num { color: var(--sev-low); }
 
   table { width: 100%; border-collapse: collapse; }
 
@@ -164,44 +217,64 @@
     color: var(--slate-300);
     padding: 0 12px 10px;
     border-bottom: 1px solid var(--border);
+    user-select: none;
   }
+  th.sortable { cursor: pointer; }
+  th.sortable:hover { color: var(--slate-100); }
+  th .sort-arrow { margin-left: 4px; opacity: 0.6; font-size: 10px; }
 
   td {
     padding: 13px 12px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-soft);
     font-size: 14px;
     vertical-align: middle;
   }
-
   tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background 0.12s ease; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
 
   .badge {
     display: inline-block;
     padding: 2px 9px;
     border-radius: 3px;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     border: 1px solid transparent;
   }
 
-  .sev-CRITICAL, .sev-critical { background: rgba(214,69,69,0.15); color: var(--sev-critical); border-color: rgba(214,69,69,0.35); }
-  .sev-HIGH, .sev-high { background: rgba(224,138,60,0.15); color: var(--sev-high); border-color: rgba(224,138,60,0.35); }
-  .sev-MEDIUM, .sev-medium { background: rgba(214,176,60,0.15); color: var(--sev-medium); border-color: rgba(214,176,60,0.35); }
-  .sev-LOW, .sev-low { background: rgba(74,144,196,0.15); color: var(--sev-low); border-color: rgba(74,144,196,0.35); }
+  .sev-CRITICAL, .sev-critical { background: rgba(224,85,90,0.14); color: var(--sev-critical); border-color: rgba(224,85,90,0.3); }
+  .sev-HIGH, .sev-high { background: rgba(224,138,60,0.14); color: var(--sev-high); border-color: rgba(224,138,60,0.3); }
+  .sev-MEDIUM, .sev-medium { background: rgba(214,176,60,0.14); color: var(--sev-medium); border-color: rgba(214,176,60,0.3); }
+  .sev-LOW, .sev-low { background: rgba(74,144,196,0.14); color: var(--sev-low); border-color: rgba(74,144,196,0.3); }
 
-  .st-OPEN { color: var(--status-open); }
-  .st-REMEDIATED { color: var(--status-remediated); }
-  .st-ACCEPTED_RISK, .st-ACCEPTED { color: var(--status-accepted); }
+  .st-OPEN { color: var(--status-open); font-weight: 500; }
+  .st-REMEDIATED { color: var(--status-remediated); font-weight: 500; }
+  .st-ACCEPTED_RISK, .st-ACCEPTED { color: var(--status-accepted); font-weight: 500; }
 
   .empty-state {
     text-align: center;
-    padding: 60px 20px;
+    padding: 64px 20px;
     color: var(--slate-300);
     border: 1px dashed var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
   }
+  .empty-state .glyph { font-size: 22px; margin-bottom: 10px; opacity: 0.6; }
+  .empty-state p:first-of-type { color: var(--slate-100); font-size: 15px; margin-bottom: 6px; font-weight: 500; }
 
-  .empty-state p:first-child { color: var(--slate-100); font-size: 15px; margin-bottom: 6px; }
+  /* Skeleton loading */
+  .skeleton-row td { padding: 14px 12px; }
+  .skeleton-bar {
+    height: 14px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--navy-850) 0%, var(--navy-800) 50%, var(--navy-850) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 
   [hidden] { display: none !important; }
 </style>
@@ -209,7 +282,16 @@
 <body>
 
 <header class="topbar" id="topbar" hidden>
-  <div class="brand">VulnTrack <span>/ asset &amp; vulnerability tracker</span></div>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L4 6V11C4 16.5 7.4 21.2 12 22C16.6 21.2 20 16.5 20 11V6L12 2Z" stroke="#b6c0d4" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12L11 14L15.5 9.5" stroke="#b6c0d4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <span class="brand-name">VulnTrack</span>
+    <span class="brand-sub">asset &amp; vulnerability tracker</span>
+  </div>
   <div class="session-info">
     <span id="userLabel"></span>
     <span class="role-pill" id="roleLabel"></span>
@@ -220,10 +302,16 @@
 <main>
   <!-- Auth screen -->
   <div class="auth-wrap" id="authScreen">
+    <div class="auth-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L4 6V11C4 16.5 7.4 21.2 12 22C16.6 21.2 20 16.5 20 11V6L12 2Z" stroke="#b6c0d4" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12L11 14L15.5 9.5" stroke="#b6c0d4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
     <h1 id="authTitle">Log in</h1>
     <p class="sub" id="authSub">Access your findings dashboard.</p>
 
-    <div class="error-msg" id="authError" hidden></div>
+    <div class="banner error" id="authError" hidden></div>
 
     <form id="authForm">
       <label for="username">Username</label>
@@ -243,9 +331,47 @@
   <!-- Dashboard -->
   <div id="dashboard" hidden>
     <div class="dash-head">
-      <h1>Findings</h1>
-      <span class="count" id="findingsCount"></span>
+      <div>
+        <h1>Findings</h1>
+        <div class="sub" id="findingsSub">Open vulnerabilities across tracked assets</div>
+      </div>
+      <div class="dash-actions">
+        <span class="last-updated" id="lastUpdated"></span>
+        <button class="icon-btn" id="refreshBtn" title="Refresh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 4V9H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M20 20V15H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M5.5 9C6.9 6 9.7 4 13 4C17.4 4 21 7.6 21 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M18.5 15C17.1 18 14.3 20 11 20C6.6 20 3 16.4 3 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
+
+    <div class="stats-row" id="statsRow" hidden>
+      <div class="stat-card stat-total">
+        <div class="num" id="statTotal">0</div>
+        <div class="lbl">Total findings</div>
+      </div>
+      <div class="stat-card stat-critical">
+        <div class="num" id="statCritical">0</div>
+        <div class="lbl">Critical</div>
+      </div>
+      <div class="stat-card stat-high">
+        <div class="num" id="statHigh">0</div>
+        <div class="lbl">High</div>
+      </div>
+      <div class="stat-card stat-medium">
+        <div class="num" id="statMedium">0</div>
+        <div class="lbl">Medium</div>
+      </div>
+      <div class="stat-card stat-low">
+        <div class="num" id="statLow">0</div>
+        <div class="lbl">Low</div>
+      </div>
+    </div>
+
     <div id="findingsContainer"></div>
   </div>
 </main>
@@ -253,7 +379,10 @@
 <script>
   const API = '/vulntrack/api';
   let token = sessionStorage.getItem('vulntrack_token');
-  let mode = 'login'; // or 'register'
+  let mode = 'login';
+  let currentFindings = [];
+  let sortKey = null;
+  let sortDir = 1;
 
   const authScreen = document.getElementById('authScreen');
   const dashboard = document.getElementById('dashboard');
@@ -263,8 +392,8 @@
   const authTitle = document.getElementById('authTitle');
   const authSub = document.getElementById('authSub');
   const authSubmit = document.getElementById('authSubmit');
-  const toggleLink = document.getElementById('toggleLink');
   const authToggle = document.getElementById('authToggle');
+  const statsRow = document.getElementById('statsRow');
 
   function decodeRole(jwt) {
     try {
@@ -275,8 +404,9 @@
     }
   }
 
-  function showError(msg) {
+  function showBanner(msg, type) {
     authError.textContent = msg;
+    authError.className = 'banner ' + (type || 'error');
     authError.hidden = false;
   }
 
@@ -297,13 +427,14 @@
     }
     document.getElementById('toggleLink').addEventListener('click', () => setMode(mode === 'login' ? 'register' : 'login'));
   }
-  toggleLink.addEventListener('click', () => setMode('register'));
+  document.getElementById('toggleLink').addEventListener('click', () => setMode('register'));
 
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     authError.hidden = true;
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
+    authSubmit.disabled = true;
 
     try {
       if (mode === 'register') {
@@ -312,10 +443,10 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password, role: 'ANALYST' })
         });
-        if (!res.ok) { showError('Could not create that account. Try a different username.'); return; }
+        if (!res.ok) { showBanner('Could not create that account. Try a different username.', 'error'); authSubmit.disabled = false; return; }
         setMode('login');
-        showError('Account created — log in below.');
-        authError.style.color = '#a8d0b8';
+        showBanner('Account created — log in below.', 'success');
+        authSubmit.disabled = false;
         return;
       }
 
@@ -324,24 +455,19 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
-      if (!res.ok) { showError('Incorrect username or password.'); return; }
+      if (!res.ok) { showBanner('Incorrect username or password.', 'error'); authSubmit.disabled = false; return; }
       const data = await res.json();
       token = data.token;
       sessionStorage.setItem('vulntrack_token', token);
       enterDashboard();
     } catch (err) {
-      showError('Could not reach the server. Is the API running?');
+      showBanner('Could not reach the server. Is the API running?', 'error');
+      authSubmit.disabled = false;
     }
   });
 
-  document.getElementById('logoutBtn').addEventListener('click', () => {
-    sessionStorage.removeItem('vulntrack_token');
-    token = null;
-    dashboard.hidden = true;
-    topbar.hidden = true;
-    authScreen.hidden = false;
-    setMode('login');
-  });
+  document.getElementById('logoutBtn').addEventListener('click', logoutSilently);
+  document.getElementById('refreshBtn').addEventListener('click', () => loadFindings());
 
   function severityBadge(sev) {
     if (!sev) return '';
@@ -353,53 +479,137 @@
     return `<span class="st-${st}">${st.replace('_', ' ')}</span>`;
   }
 
+  function updateStats(findings) {
+    const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    findings.forEach(f => {
+      const sev = f.vulnerability ? f.vulnerability.severity : null;
+      if (sev && counts.hasOwnProperty(sev)) counts[sev]++;
+    });
+    document.getElementById('statTotal').textContent = findings.length;
+    document.getElementById('statCritical').textContent = counts.CRITICAL;
+    document.getElementById('statHigh').textContent = counts.HIGH;
+    document.getElementById('statMedium').textContent = counts.MEDIUM;
+    document.getElementById('statLow').textContent = counts.LOW;
+  }
+
+  const sevRank = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+
+  function sortFindings(findings) {
+    if (!sortKey) return findings;
+    const sorted = [...findings].sort((a, b) => {
+      let av, bv;
+      if (sortKey === 'asset') { av = a.asset ? a.asset.hostname : ''; bv = b.asset ? b.asset.hostname : ''; }
+      else if (sortKey === 'cve') { av = a.vulnerability ? a.vulnerability.cveId : ''; bv = b.vulnerability ? b.vulnerability.cveId : ''; }
+      else if (sortKey === 'severity') { av = sevRank[a.vulnerability ? a.vulnerability.severity : ''] || 0; bv = sevRank[b.vulnerability ? b.vulnerability.severity : ''] || 0; }
+      else if (sortKey === 'status') { av = a.status || ''; bv = b.status || ''; }
+      else if (sortKey === 'deadline') { av = a.remediationDeadline || ''; bv = b.remediationDeadline || ''; }
+      else { av = ''; bv = ''; }
+      if (av < bv) return -1 * sortDir;
+      if (av > bv) return 1 * sortDir;
+      return 0;
+    });
+    return sorted;
+  }
+
+  function renderTable() {
+    const container = document.getElementById('findingsContainer');
+    const findings = sortFindings(currentFindings);
+
+    const arrow = (key) => sortKey === key ? `<span class="sort-arrow">${sortDir === 1 ? '\u25B2' : '\u25BC'}</span>` : '';
+
+    const rows = findings.map(f => `
+      <tr>
+        <td>${f.asset ? f.asset.hostname : '\u2014'}</td>
+        <td class="mono">${f.vulnerability ? f.vulnerability.cveId : '\u2014'}</td>
+        <td>${severityBadge(f.vulnerability ? f.vulnerability.severity : null)}</td>
+        <td>${statusLabel(f.status)}</td>
+        <td>${f.remediationDeadline || '\u2014'}</td>
+        <td>${f.assignedUser ? f.assignedUser.username : 'Unassigned'}</td>
+      </tr>
+    `).join('');
+
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-key="asset" tabindex="0">Asset ${arrow('asset')}</th>
+            <th class="sortable" data-key="cve" tabindex="0">CVE ${arrow('cve')}</th>
+            <th class="sortable" data-key="severity" tabindex="0">Severity ${arrow('severity')}</th>
+            <th class="sortable" data-key="status" tabindex="0">Status ${arrow('status')}</th>
+            <th class="sortable" data-key="deadline" tabindex="0">Deadline ${arrow('deadline')}</th>
+            <th>Assigned to</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+    container.querySelectorAll('th.sortable').forEach(th => {
+      const handler = () => {
+        const key = th.dataset.key;
+        if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+        renderTable();
+      };
+      th.addEventListener('click', handler);
+      th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } });
+    });
+  }
+
+  function renderSkeleton() {
+    const container = document.getElementById('findingsContainer');
+    const skeletonRows = Array.from({ length: 3 }).map(() => `
+      <tr class="skeleton-row">
+        <td><div class="skeleton-bar" style="width:70%"></div></td>
+        <td><div class="skeleton-bar" style="width:80%"></div></td>
+        <td><div class="skeleton-bar" style="width:50%"></div></td>
+        <td><div class="skeleton-bar" style="width:60%"></div></td>
+        <td><div class="skeleton-bar" style="width:55%"></div></td>
+        <td><div class="skeleton-bar" style="width:65%"></div></td>
+      </tr>`).join('');
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr><th>Asset</th><th>CVE</th><th>Severity</th><th>Status</th><th>Deadline</th><th>Assigned to</th></tr>
+        </thead>
+        <tbody>${skeletonRows}</tbody>
+      </table>`;
+  }
+
+  function setLastUpdated() {
+    const now = new Date();
+    document.getElementById('lastUpdated').textContent = 'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
   async function loadFindings() {
     const container = document.getElementById('findingsContainer');
-    const countEl = document.getElementById('findingsCount');
+    const refreshBtn = document.getElementById('refreshBtn');
+    refreshBtn.disabled = true;
+    renderSkeleton();
+
     try {
       const res = await fetch(`${API}/findings`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.status === 401) { logoutSilently(); return; }
       const findings = await res.json();
-      countEl.textContent = `${findings.length} total`;
+      currentFindings = findings;
+      statsRow.hidden = findings.length === 0;
 
       if (findings.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
+            <div class="glyph">&#9678;</div>
             <p>No findings yet</p>
             <p>Findings created via the API will appear here.</p>
           </div>`;
-        return;
+      } else {
+        updateStats(findings);
+        renderTable();
       }
-
-      const rows = findings.map(f => `
-        <tr>
-          <td>${f.asset ? f.asset.hostname : '—'}</td>
-          <td class="mono">${f.vulnerability ? f.vulnerability.cveId : '—'}</td>
-          <td>${severityBadge(f.vulnerability ? f.vulnerability.severity : null)}</td>
-          <td>${statusLabel(f.status)}</td>
-          <td>${f.remediationDeadline || '—'}</td>
-          <td>${f.assignedUser ? f.assignedUser.username : 'Unassigned'}</td>
-        </tr>
-      `).join('');
-
-      container.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Asset</th>
-              <th>CVE</th>
-              <th>Severity</th>
-              <th>Status</th>
-              <th>Deadline</th>
-              <th>Assigned to</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+      setLastUpdated();
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><p>Could not load findings</p><p>Check that the API is reachable.</p></div>`;
+    } finally {
+      refreshBtn.disabled = false;
     }
   }
 
