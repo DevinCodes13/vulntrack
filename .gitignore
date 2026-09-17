@@ -16,3 +16,6 @@ terraform-eks/.terraform/
 terraform-eks/*.tfstate
 terraform-eks/*.tfstate.backup
 terraform-eks/terraform.tfvars
+# Vagrant runtime state
+vagrant/.vagrant/
+
