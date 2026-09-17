@@ -19,3 +19,6 @@ terraform-eks/terraform.tfvars
 # Vagrant runtime state
 vagrant/.vagrant/
 
+
+# Vagrant runtime state
+vagrant/.vagrant/

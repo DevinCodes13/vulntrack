@@ -16,8 +16,12 @@ gpgcheck=1
 gpgkey=https://packages.adoptium.net/artifactory/api/gpg/key/public
 REPOEOF
 dnf -y install temurin-17-jdk
-alternatives --install /usr/bin/java  java  /usr/lib/jvm/java-17-temurin-jdk/bin/java  3000
+# Fedora derives alternatives priority from the version string (java-25-openjdk
+# registers at 25000421), so no sane priority outranks it. Pin with --set instead.
+alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-temurin-jdk/bin/java 3000 --follower /usr/bin/keytool keytool /usr/lib/jvm/java-17-temurin-jdk/bin/keytool
 alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-17-temurin-jdk/bin/javac 3000
+alternatives --set java /usr/lib/jvm/java-17-temurin-jdk/bin/java
+alternatives --set javac /usr/lib/jvm/java-17-temurin-jdk/bin/javac
 echo 'export JAVA_HOME=/usr/lib/jvm/java-17-temurin-jdk' > /etc/profile.d/java17.sh
 
 dnf -y config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo \
