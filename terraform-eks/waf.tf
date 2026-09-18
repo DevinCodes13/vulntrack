@@ -115,11 +115,12 @@ resource "aws_wafv2_web_acl" "vulntrack" {
   }
 }
 
-resource "aws_wafv2_web_acl_association" "vulntrack" {
-  resource_arn = var.alb_arn
-  web_acl_arn  = aws_wafv2_web_acl.vulntrack.arn
-}
 
 output "waf_web_acl_arn" {
   value = aws_wafv2_web_acl.vulntrack.arn
 }
+
+# The WAF Web ACL is attached via the ALB Ingress annotation instead:
+#   alb.ingress.kubernetes.io/wafv2-acl-arn: <waf_web_acl_arn output>
+# The ALB is created by the AWS Load Balancer Controller, so its ARN isn't
+# knowable at plan time; a hardcoded one breaks on every destroy/recreate.
