@@ -34,7 +34,7 @@ dnf -y config-manager addrepo --from-repofile=https://rpm.releases.hashicorp.com
   || dnf -y config-manager --add-repo https://rpm.releases.hashicorp.com/fedora/hashicorp.repo
 dnf -y install terraform
 
-K8S_MINOR="v1.33"
+K8S_MINOR="v1.31"
 cat >/etc/yum.repos.d/kubernetes.repo <<EOF
 [kubernetes]
 name=Kubernetes
