@@ -25,3 +25,7 @@ vagrant/.vagrant/
 
 # Vagrant runtime state
 vagrant/.vagrant/
+
+# Saved plan files
+*.tfplan
+tfplan
