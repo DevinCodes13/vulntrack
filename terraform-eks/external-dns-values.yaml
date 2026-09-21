@@ -17,3 +17,4 @@ serviceAccount:
   name: external-dns
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::825990809758:role/vulntrack-eks-external-dns-role
+txtPrefix: "extdns-%{record_type}."
