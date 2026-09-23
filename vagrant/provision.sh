@@ -2,6 +2,12 @@
 set -euxo pipefail
 
 dnf -y upgrade --refresh
+
+# The vagrant-disksize plugin grows the virtual disk and partition, but not the
+# filesystem inside it - without this the box runs on the image's original 5GB.
+dnf -y install cloud-utils-growpart
+growpart /dev/sda 3 || true
+btrfs filesystem resize max /
 dnf -y install git maven dnf-plugins-core unzip jq helm awscli2
 
 # JDK 17 - Fedora 44 dropped java-17-openjdk, and maven pulls in JDK 25 as a
