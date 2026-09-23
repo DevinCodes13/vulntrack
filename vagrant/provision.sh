@@ -58,4 +58,15 @@ docker compose version
 terraform version
 kubectl version --client
 helm version
-aws --version
+aws --version\n
+# Shell environment: zsh + Oh My Zsh + Powerlevel10k, plus CLI tools.
+# Provisioning runs as root, so the user-level parts run via sudo -u vagrant.
+dnf -y install zsh util-linux-user bind-utils fzf ripgrep bat tree
+sudo -u vagrant sh -c 'RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+sudo -u vagrant git clone --depth=1 https://github.com/romkatv/powerlevel10k.git /home/vagrant/.oh-my-zsh/custom/themes/powerlevel10k
+sudo -u vagrant git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions /home/vagrant/.oh-my-zsh/custom/plugins/zsh-autosuggestions
+sudo -u vagrant git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting /home/vagrant/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
+sudo -u vagrant sed -i 's|^ZSH_THEME=.*|ZSH_THEME="powerlevel10k/powerlevel10k"|' /home/vagrant/.zshrc
+sudo -u vagrant sed -i 's|^plugins=.*|plugins=(git docker docker-compose kubectl helm terraform aws fzf zsh-autosuggestions zsh-syntax-highlighting)|' /home/vagrant/.zshrc
+chsh -s /bin/zsh vagrant
+install -o vagrant -g vagrant -m 644 /vagrant/p10k.zsh /home/vagrant/.p10k.zsh 2>/dev/null || true
