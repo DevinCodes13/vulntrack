@@ -58,7 +58,7 @@ docker compose version
 terraform version
 kubectl version --client
 helm version
-aws --version\n
+aws --version
 # Shell environment: zsh + Oh My Zsh + Powerlevel10k, plus CLI tools.
 # Provisioning runs as root, so the user-level parts run via sudo -u vagrant.
 dnf -y install zsh util-linux-user bind-utils fzf ripgrep bat tree
