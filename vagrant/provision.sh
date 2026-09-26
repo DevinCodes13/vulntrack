@@ -8,7 +8,12 @@ dnf -y upgrade --refresh
 dnf -y install cloud-utils-growpart
 growpart /dev/sda 3 || true
 btrfs filesystem resize max /
-dnf -y install git maven dnf-plugins-core unzip jq helm awscli2
+dnf -y install git maven dnf-plugins-core unzip jq helm awscli2 chrony
+
+# The Vagrantfile disables VirtualBox host time sync (the two fought and
+# stepped the clock by minutes, breaking AWS signatures and kubectl auth),
+# so chrony is the single time authority inside the guest.
+systemctl enable --now chronyd
 
 # JDK 17 - Fedora 44 dropped java-17-openjdk, and maven pulls in JDK 25 as a
 # dependency, so Temurin 17 needs explicit alternatives priority to match the
