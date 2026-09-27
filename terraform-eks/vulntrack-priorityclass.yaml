@@ -1,0 +1,10 @@
+# The app is the reason the cluster exists; controllers and the mesh can be
+# rescheduled without an outage. Without this everything runs at priority 0 and
+# the kubelet evicts the largest consumer - always the app - when a node fills.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: vulntrack-app
+value: 1000000
+globalDefault: false
+description: "VulnTrack application workload - evict infrastructure pods first"

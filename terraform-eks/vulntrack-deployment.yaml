@@ -22,6 +22,7 @@ spec:
         sidecar.istio.io/proxyCPULimit: "200m"
         sidecar.istio.io/proxyMemoryLimit: "128Mi"
     spec:
+      priorityClassName: vulntrack-app
       containers:
         - name: vulntrack
           image: 825990809758.dkr.ecr.us-east-2.amazonaws.com/vulntrack:latest
