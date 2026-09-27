@@ -7,6 +7,8 @@ metadata:
     app: vulntrack
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: vulntrack
@@ -25,16 +27,19 @@ spec:
           image: 825990809758.dkr.ecr.us-east-2.amazonaws.com/vulntrack:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms128m -Xmx256m -XX:MaxMetaspaceSize=256m"
           envFrom:
             - secretRef:
                 name: vulntrack-secrets
           resources:
             requests:
               cpu: "150m"
-              memory: "384Mi"
+              memory: "448Mi"
             limits:
               cpu: "500m"
-              memory: "768Mi"
+              memory: "640Mi"
           readinessProbe:
             httpGet:
               path: /vulntrack/api/ping
