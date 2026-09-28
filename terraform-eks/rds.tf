@@ -41,13 +41,19 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
-  identifier     = "${var.project_name}-db"
+  # Restored from an encrypted snapshot copy (see Phase 7). RDS cannot encrypt
+  # storage in place, so the original unencrypted instance was snapshotted, the
+  # snapshot copied with the customer-managed key, and a new instance restored
+  # from that copy. The "-enc" suffix is the restored instance.
+  identifier     = "${var.project_name}-db-enc"
   engine         = "postgres"
-  engine_version = "16"
+  engine_version = "16.13"
   instance_class = "db.t3.micro"
 
   allocated_storage = 20
   storage_type      = "gp3"
+  storage_encrypted = true
+  kms_key_id        = aws_kms_key.vulntrack.arn
 
   db_name  = "vulntrack"
   username = "vulntrack"
