@@ -58,6 +58,21 @@ resource "aws_launch_template" "eks_nodes" {
     ""
   ]))
 
+  # Node root volumes are unencrypted by default (the AMI's setting). Encrypt
+  # with the customer-managed key so container images, logs, and anything
+  # written to node storage are unreadable from a detached volume or snapshot.
+  # EBS cannot encrypt in place, so changing this requires replacing the nodes.
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      encrypted             = true
+      kms_key_id            = aws_kms_key.vulntrack.arn
+      delete_on_termination = true
+    }
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = {
