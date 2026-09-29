@@ -29,3 +29,6 @@ vagrant/.vagrant/
 # Saved plan files
 *.tfplan
 tfplan
+
+# Trivy JSON output is large; keep the human-readable .txt instead
+docs/security/*.json
