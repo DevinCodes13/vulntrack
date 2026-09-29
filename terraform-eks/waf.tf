@@ -1,9 +1,3 @@
-variable "alb_arn" {
-  description = "ARN of the ALB created by the Kubernetes Ingress. Not Terraform-managed (created by the AWS Load Balancer Controller), so this is a manual reference — update if the Ingress is ever deleted and recreated, which generates a new ALB."
-  type        = string
-  default     = "arn:aws:elasticloadbalancing:us-east-2:825990809758:loadbalancer/app/k8s-default-vulntrac-6b0eb6143e/4731378caaf8a85d"
-}
-
 resource "aws_wafv2_web_acl" "vulntrack" {
   name        = "${var.project_name}-waf"
   description = "WAF for the VulnTrack ALB - AWS managed rule groups plus rate limiting"
@@ -83,9 +77,9 @@ resource "aws_wafv2_web_acl" "vulntrack" {
     }
   }
 
-  # Rate limiting: blocks any single IP exceeding 2000 requests per 5-minute
-  # window — a basic defense against brute-force/scraping without being
-  # aggressive enough to affect normal testing traffic.
+  # Rate limiting: WAF rate-based rules count over a fixed 5-minute window, so
+  # a 600 requests/minute target is expressed as 3000 per 5 minutes. Counted
+  # per source IP; an IP over the limit is blocked until its rate drops.
   rule {
     name     = "RateLimit"
     priority = 4
@@ -96,7 +90,7 @@ resource "aws_wafv2_web_acl" "vulntrack" {
 
     statement {
       rate_based_statement {
-        limit              = 2000
+        limit              = 3000
         aggregate_key_type = "IP"
       }
     }
@@ -104,6 +98,93 @@ resource "aws_wafv2_web_acl" "vulntrack" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "RateLimit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # Blocks requests whose User-Agent matches common scanning and enumeration
+  # tools. This stops opportunistic automated scanning only - a user agent is
+  # trivially changed, so anyone deliberate walks straight past it. Managed Bot
+  # Control does behavioural detection but costs $10/month; this is the free
+  # tier of the same idea and its limits are understood rather than assumed.
+  rule {
+    name     = "BlockScannerUserAgents"
+    priority = 5
+
+    action {
+      block {}
+    }
+
+    statement {
+      or_statement {
+        dynamic "statement" {
+          for_each = ["nikto", "sqlmap", "nmap", "masscan", "dirbuster", "gobuster", "wpscan", "nessus", "acunetix", "havij"]
+          content {
+            byte_match_statement {
+              search_string         = statement.value
+              positional_constraint = "CONTAINS"
+
+              field_to_match {
+                single_header {
+                  name = "user-agent"
+                }
+              }
+
+              text_transformation {
+                priority = 0
+                type     = "LOWERCASE"
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "BlockScannerUserAgents"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # The Common Rule Set caps individual fields (body, query string, cookie
+  # header) but not the total size of all headers. Oversized header sets are a
+  # cheap denial-of-service vector and have no legitimate use here.
+  rule {
+    name     = "BlockOversizedHeaders"
+    priority = 6
+
+    action {
+      block {}
+    }
+
+    statement {
+      size_constraint_statement {
+        comparison_operator = "GT"
+        size                = 8192
+
+        field_to_match {
+          headers {
+            match_scope = "ALL"
+
+            match_pattern {
+              all {}
+            }
+
+            oversize_handling = "MATCH"
+          }
+        }
+
+        text_transformation {
+          priority = 0
+          type     = "NONE"
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "BlockOversizedHeaders"
       sampled_requests_enabled   = true
     }
   }
