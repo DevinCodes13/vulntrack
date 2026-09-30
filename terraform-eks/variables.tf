@@ -35,22 +35,22 @@ variable "cluster_version" {
 }
 
 variable "node_instance_types" {
-  description = "EC2 instance types for the managed node group. t3.micro chosen specifically because this AWS account is Free-Tier-restricted to only free-tier-eligible instance types; note this gives only 1GB RAM per node, which may be tight once Istio sidecars are injected alongside WildFly."
+  description = "EC2 instance types for the managed node group. t3.small. Started on t3.micro for free-tier eligibility, but 1GB per node (~520Mi allocatable) could not hold WildFly plus an Envoy sidecar - the app was evicted repeatedly and the WildFly 40 upgrade made it unschedulable entirely. Three t3.small nodes cost roughly the same as five micros and leave real headroom."
   type        = list(string)
-  default     = ["t3.micro"]
+  default     = ["t3.small"]
 }
 
 variable "node_desired_size" {
   type    = number
-  default = 5
+  default = 3
 }
 
 variable "node_min_size" {
   type    = number
-  default = 4
+  default = 2
 }
 
 variable "node_max_size" {
   type    = number
-  default = 5
+  default = 4
 }
