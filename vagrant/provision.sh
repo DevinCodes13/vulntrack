@@ -86,3 +86,4 @@ dnf -y install audit
 mv /etc/audit/rules.d/audit.rules /etc/audit/rules.d/audit.rules.disabled 2>/dev/null || true
 install -o root -g root -m 600 /tmp/vulntrack-audit.rules /etc/audit/rules.d/vulntrack.rules 2>/dev/null || true
 augenrules --load 2>/dev/null || true
+update-crypto-policies --set FIPS

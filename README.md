@@ -46,6 +46,7 @@ code for both is preserved in this repo.
 - [Infrastructure as code](#infrastructure-as-code)
 - [Phase 5: Kubernetes, a service mesh, and real TLS automation](#phase-5-kubernetes-a-service-mesh-and-real-tls-automation)
 - [Phase 6: Proving the rebuild](#phase-6-proving-the-rebuild)
+- [Phase 7: Hardening what was already running](#phase-7-hardening-what-was-already-running)
 - [CI/CD pipeline](#cicd-pipeline)
 - [Local development setup](#local-development-setup)
 - [Troubleshooting log & lessons learned](#troubleshooting-log--lessons-learned)
@@ -707,6 +708,345 @@ TXT records alongside A/AAAA, and the WAF lists the *current* ALB.
 
 ---
 
+## Phase 7: Hardening what was already running
+
+Phases 1 through 6 built the thing and proved it could be rebuilt. Phase 7
+asks a different question: of the data this application holds and the
+traffic it accepts, what is actually protected, and how would anyone know?
+
+The honest starting answer was "less than the architecture diagram
+suggests." The database was unencrypted. Node disks were unencrypted. The
+Terraform state bucket — which holds the database password and the JWT
+signing key in plaintext — was encrypted with an AWS-owned key that cannot
+be audited. The container image was built on an operating system that had
+been end-of-life for over a year. Audit logging was running and recording
+nothing.
+
+Every one of those passes a casual look. Each section below is one of them.
+
+### A key you actually control
+
+AWS encrypts EBS and RDS by default, with keys it owns and manages. The
+data is encrypted, but the key is opaque: its use cannot be audited per
+call, it cannot be rotated on demand, and it cannot be revoked. A
+customer-managed key changes all three — every `Encrypt`/`Decrypt` appears
+in CloudTrail, rotation is a setting, and disabling the key makes
+everything encrypted with it immediately unreadable.
+
+[`kms.tf`](terraform-eks/kms.tf) creates one with annual rotation and a
+seven-day deletion window:
+
+![KMS key rotation enabled](docs/screenshots/p7-01-kms-key-rotation-enabled.png)
+*`KeyManager: CUSTOMER` is the part that matters — an AWS-managed key would
+say `AWS` and offer none of the above*
+
+Pointing the node group's launch template at it was a two-line change.
+Applying it was not, because **a KMS key being enabled and a service being
+able to use it are different things**. The node group update failed with:
+
+```
+Client.InvalidKMSKey.InvalidState: The KMS key provided is in an incorrect state
+```
+
+The key was enabled and healthy. What the message meant was that the Auto
+Scaling service-linked role had no permission to use it. A KMS key carries
+its own resource policy, separate from IAM, and **both** must allow an
+action — the default policy names only the account root, so no IAM grant
+can substitute. Adding `kms:Encrypt`, `kms:GenerateDataKey*` and a
+conditioned `kms:CreateGrant` for
+`AWSServiceRoleForAutoScaling` fixed it, and the rolling replacement
+completed on the next attempt.
+
+![All node volumes encrypted with the customer-managed key](docs/screenshots/p7-02-ebs-volumes-encrypted-cmk.png)
+*Five nodes, `gp3`, every volume encrypted with the project's own key*
+
+### Encrypting a database that was already running
+
+RDS cannot encrypt storage in place. Encryption is decided when the
+storage is created, so the only path for an existing instance is:
+
+```
+snapshot → copy the snapshot with the CMK → restore a new instance from the copy
+```
+
+Steps one to three run against the live database with no downtime. The
+only interruption is repointing the application, which is one value in a
+Kubernetes Secret and a pod restart:
+
+```bash
+aws rds create-db-snapshot      --db-instance-identifier vulntrack-eks-db ...
+aws rds copy-db-snapshot        --kms-key-id alias/vulntrack-eks ...
+aws rds restore-db-instance-from-db-snapshot --no-publicly-accessible ...
+kubectl patch secret vulntrack-secrets -p "{\"data\":{\"DB_HOST\":\"$(echo -n "$NEWHOST" | base64 -w0)\"}}"
+kubectl rollout restart deployment vulntrack
+```
+
+`--no-publicly-accessible` is not optional: a restore defaults to
+**public**, which would put the database on the internet.
+
+![Old and new instances side by side](docs/screenshots/p7-03-rds-encrypted-vs-unencrypted.png)
+*The same data, before and after — the restored instance keeps the
+original credentials, so only the hostname changes*
+
+The step that is easy to skip is the one that matters most afterward.
+Terraform still tracked the *old* instance, and because that instance still
+existed and still matched the configuration, `terraform plan` reported
+**"No changes"** — the dangerous answer, not the reassuring one. Deleting
+the old database at that point would have left Terraform convinced a
+resource was missing and ready to recreate it: a fresh, empty,
+**unencrypted** database, while the real one sat unmanaged.
+
+Reconciling it meant updating the config to describe what exists, then
+swapping the state entry:
+
+```bash
+terraform state rm aws_db_instance.main          # stop tracking the old one (does not delete it)
+terraform import aws_db_instance.main vulntrack-eks-db-enc
+```
+
+![Clean plan after the import](docs/screenshots/p7-04-terraform-plan-clean-after-import.png)
+
+### The bucket holding every secret
+
+The Terraform state file contains the RDS password and the JWT signing key
+in plaintext. Public access was already blocked and versioning already on
+(both from the Phase 6 migration), but the bucket was encrypted with
+`AES256` — SSE-S3, an AWS-owned key — and had **no bucket policy at all**,
+so nothing prevented a plaintext HTTP request.
+
+[`s3-state-hardening.tf`](terraform-eks/s3-state-hardening.tf) switches it
+to the customer-managed key and denies insecure transport:
+
+![State bucket using the customer-managed key](docs/screenshots/p7-05-s3-state-bucket-cmk-encryption.png)
+
+A second statement went in alongside it and had to come straight back out.
+`DenyUnencryptedObjectUploads` required an
+`x-amz-server-side-encryption: aws:kms` header on every `PutObject`. It
+looks obviously correct for a secrets bucket. It locked Terraform out of
+its own state on the very next write:
+
+```
+Error: Failed to save state
+AccessDenied: ... not authorized to perform: s3:PutObject ... with an explicit deny in a resource-based policy
+```
+
+With bucket-default encryption configured, S3 encrypts server-side without
+the client sending that header — so the condition denied the request before
+the encryption it was checking for could happen. And because an explicit
+`Deny` beats every `Allow`, no IAM change could have rescued it. Terraform
+wrote the state it could not upload to `errored.tfstate`; the recovery was
+to fix the policy out-of-band with the CLI and `terraform state push`.
+
+### Web application firewall
+
+Phase 5 already ran three AWS managed rule groups, which between them cover
+XSS, SQL injection, and size limits on body, query string and cookie
+header. Phase 7 added what they do not: a corrected rate limit, scanner
+blocking, and a total-header-size cap.
+
+| Rule | What it does |
+|---|---|
+| Rate limiting | 3000 requests per 5-minute window per source IP (WAF counts over a fixed 5-minute window, so a 600 req/min target is expressed as 3000) |
+| `BlockScannerUserAgents` | Blocks ten known scanning tools by `User-Agent`, lowercased before matching |
+| `BlockOversizedHeaders` | Blocks requests whose headers total more than 8 KB |
+
+Managed Bot Control was considered and rejected: $10/month for behavioural
+detection on an application with no real traffic, where a custom rule
+demonstrates the mechanism and its limits more usefully.
+
+Rules were then tested rather than assumed:
+
+![Every WAF rule verified by request](docs/screenshots/p7-06-waf-rules-verified.png)
+
+```
+normal request:          200
+sqlmap UA:               403   BlockScannerUserAgents
+nikto UA:                403   BlockScannerUserAgents
+same tool, generic UA:   200   bypassed
+SQLi in query string:    403   AWSManagedRulesSQLiRuleSet
+XSS in query string:     403   AWSManagedRulesCommonRuleSet
+9 KB header:             403   BlockOversizedHeaders
+```
+
+The fourth line is deliberate. A `User-Agent` rule stops opportunistic
+scanning and nothing else — one flag changes it, and the same tool walks
+straight through. Knowing where a control stops is more useful than
+claiming it is comprehensive.
+
+### Scanning the vulnerability tracker for vulnerabilities
+
+Scanning the image with Trivy returned **199 CRITICAL and HIGH findings**.
+The breakdown explained itself immediately:
+
+```
+vulntrack-wildfly:latest (centos 7.9.2009): 112
+Java: 87
+```
+
+The base image was **CentOS 7, end-of-life since 30 June 2024**. Those 112
+findings were not a backlog to work through — they were permanent, with no
+patches coming, growing with every new CVE. Among them `CVE-2021-43527`, a
+five-year-old critical in NSS with a published fix that CentOS 7 will never
+ship.
+
+That reframed the work: not "fix some CVEs" but "replace a foundation that
+cannot be fixed." Two changes:
+
+- Base image `wildfly:31.0.1.Final-jdk17` → `wildfly:40.0.1.Final-jdk17`,
+  which moves to **RHEL 9**, a supported distribution
+- PostgreSQL JDBC driver 42.7.4 → 42.7.12, closing a SCRAM-SHA-256-PLUS
+  downgrade issue (`CVE-2026-54291`) on the connection to RDS — both in
+  `pom.xml` and in the WildFly module, since the module is what actually
+  loads at runtime
+
+| | Before | After |
+|---|---|---|
+| Base OS | CentOS 7.9 (EOL) | RHEL 9.8 (supported) |
+| OS findings | 112 | 40 |
+| Java findings | 87 | 20 |
+| CRITICAL | 12 | **4** |
+| HIGH | 187 | **56** |
+| **Total** | **199** | **60** |
+
+![Before and after the base image change](docs/screenshots/p7-07-trivy-before-after.png)
+
+A 70% reduction, and the remaining OS findings now sit on a distribution
+that still ships patches. The scan output is committed under
+[`docs/security/`](docs/security/) so the claim is checkable.
+
+What is left splits into two honest categories rather than one aspiration:
+
+- **3 criticals with fixes WildFly 40 does not yet bundle** — `netty-handler`
+  4.1.135 (fix in 4.1.137), `bcprov-jdk18on` 1.84 (fix in 1.85),
+  `cxf-rt-transports-jms` 4.0.11 (fix in 4.1.7). Overriding jars inside a
+  vendor's app server produces a combination nobody has tested; the correct
+  action is to wait for the next WildFly release.
+- **17 highs with no fix available at all** — accepted and recorded.
+
+Nine major WildFly versions is a real jump — Hibernate moved 6.4 → 7.3 and
+Weld 5.1 → 6.0 — so the upgrade was smoke- and sanity-tested locally before
+going anywhere near the cluster:
+
+```
+ping:            200
+dashboard:       200
+register user:   201
+login:           JWT issued
+create asset:    201
+read back:       correct JSON
+```
+
+![Smoke and sanity test on the upgraded image](docs/screenshots/p7-08-smoke-sanity-wildfly40.png)
+
+### Where the free tier ran out
+
+Phase 5 noted that `t3.micro` gives 1 GB per node and that this "may be
+tight once Istio sidecars are injected alongside WildFly." Phase 7 is where
+that bill came due.
+
+A `t3.micro` exposes roughly **520Mi of allocatable memory** after the
+kubelet reservation. WildFly requested 384Mi and actually used ~403Mi, so
+the kubelet evicted it — repeatedly, in a loop that produced hundreds of
+dead pods over days. Three fixes in sequence:
+
+- **Right-sized the request** to match measured usage. Understating what a
+  container uses is what causes the scheduler to place it somewhere it does
+  not fit.
+- **Capped the JVM**, which by default sizes its heap from visible RAM and
+  grows until something stops it. The first attempt set
+  `MaxMetaspaceSize=128m` and produced a subtler failure: WildFly loads
+  hundreds of modules, blew past it, and threw `OutOfMemoryError: Metaspace`
+  while *appearing healthy* — the pod stayed `2/2 Running`, `/api/ping`
+  returned 200, and every real request returned 500.
+- **Added a priority class**, because everything in the cluster ran at
+  priority 0 and the kubelet evicts the largest consumer. The application
+  now outranks the controllers and the mesh, which can be rescheduled
+  without an outage.
+
+Then the WildFly 40 upgrade made the pod unschedulable outright:
+
+```
+0/5 nodes are available: 5 Insufficient memory.
+3 node(s) had untolerated taint {node.kubernetes.io/memory-pressure}
+```
+
+Three of five nodes had been tainted by the kubelet as unable to accept
+work. No request size fits a JVM application server plus an Envoy sidecar
+into 520Mi. The node group moved to **three `t3.small` instances** — 2 GB
+each, costing about the same as five micros — and the problem disappeared.
+
+That is the honest finding: a service mesh and a Java application server do
+not fit on free-tier nodes, and the failure mode is not a clean error but
+months of intermittent instability that looks like an application bug.
+
+### Host hardening: SELinux, auditd, and FIPS
+
+SELinux was already `Enforcing` with the targeted policy — Fedora's default,
+and worth verifying rather than assuming.
+
+Audit logging was the opposite. `auditd` was active, rules loaded cleanly,
+and `auditctl -l` listed all eighteen. Nothing was recorded. The cause is
+shipped by the distribution: `/etc/audit/rules.d/audit.rules` contains
+
+```
+-D                 # delete all rules
+-a task,never      # suppress syscall auditing for all tasks
+```
+
+with a header stating it exists "to negate the performance effects of the
+audit system **by preventing syscall auditing to work**." Rules added
+alongside it load without error and appear in `auditctl -l` — and record
+nothing, because that file wipes the ruleset and disables syscall auditing
+first. **A compliance check asking "is auditd enabled and are rules loaded?"
+passes on a system that audits nothing.**
+
+Renaming that file out of the way (`augenrules` only reads `*.rules`) and
+loading [`vagrant/audit/vulntrack.rules`](vagrant/audit/vulntrack.rules)
+produces actual records — identity file changes, privilege escalation,
+infrastructure tooling execution, failed access attempts, and reads of the
+AWS and Kubernetes credential directories:
+
+![Audit rules recording a credential file read](docs/screenshots/p7-09-auditd-credential-read-recorded.png)
+*`comm=cat exe=/usr/bin/cat auid=vagrant key=cloud_creds` — a concrete
+answer to "how would you know if your credentials were read," and directly
+relevant given an access key had to be rotated earlier in this phase*
+
+FIPS was scoped rather than claimed, because FIPS compliance is a
+certification covering every cryptographic module in a stack, not a switch.
+What was implemented:
+
+- **AWS API calls routed through FIPS endpoints** — `use_fips_endpoint`
+  set on the profile, so Terraform and the CLI both resolve
+  `kms-fips.us-east-2.amazonaws.com` rather than the standard endpoint
+- **System-wide crypto policy set to FIPS**, restricting TLS cipher suites,
+  SSH algorithms and certificate signatures — 61 TLS ciphers down to 40 on
+  this image
+
+The crypto policy change had an immediate practical consequence worth
+recording: **SSH authentication with an Ed25519 key stopped working.**
+Ed25519 is not a NIST-approved algorithm, so a FIPS-restricted client will
+not offer it, and `git push` failed with `Permission denied (publickey)`
+against a key that was correctly registered. Generating an RSA key — which
+is approved — fixed it immediately. The modern default key type silently
+becomes unusable under FIPS.
+
+What was not implemented, and why:
+
+- **Kernel `fips=1`** was attempted and reverted. Fedora 44 does not ship
+  `fips-mode-setup` at all, and setting the boot parameter manually
+  corrupted the GRUB configuration badly enough to require rebuilding the
+  box. `update-crypto-policies` itself warns that the policy alone "is not
+  sufficient for FIPS compliance."
+- **FIPS-enabled EKS node AMIs** and a **FIPS-certified JVM crypto
+  provider** — identified as the remaining layers, not implemented.
+- Fedora is **not a FIPS-validated distribution** regardless. Red Hat
+  validates RHEL; Fedora ships the same mechanisms without the
+  certification.
+
+So: FIPS mode demonstrated at two layers, with the remaining layers named.
+Not "FIPS compliant."
+
+---
 
 ## CI/CD pipeline
 
@@ -1003,6 +1343,78 @@ issues is a meaningful part of what this project demonstrates.
   default, because Fedora sets `alternatives` priority from the version
   string (25000421). Pinned with `alternatives --set`.
 
+### Phase 7
+
+- **A KMS key being enabled and a service being able to use it are
+  different things.** Attaching the customer-managed key to the node
+  group's launch template failed with
+  `Client.InvalidKMSKey.InvalidState` — a message that reads like the key
+  is broken. It was enabled and healthy. A KMS key carries its own
+  resource policy separate from IAM, and both must allow an action; the
+  default policy names only the account root, so the Auto Scaling
+  service-linked role could not use it and no IAM grant would have helped.
+- **Least privilege is visible when it bites.** Three separate operations
+  in this phase stopped on permission denials — `kms:TagResource` when
+  creating the key, `rds:CreateDBSnapshot` when starting the database
+  migration, `s3:PutBucketPolicy` when hardening the state bucket. None
+  were needed to build the original stack. Each one was a deliberate grant
+  rather than a wildcard already in place, which is the point.
+- **An explicit `Deny` beats every `Allow`, including your own.** A bucket
+  policy statement requiring `x-amz-server-side-encryption: aws:kms` on
+  every `PutObject` locked Terraform out of its own state file on the next
+  write. With bucket-default encryption set, S3 encrypts server-side
+  without the client sending that header, so the condition denied the
+  request before the encryption it checked for could occur. Terraform
+  wrote the unsaved state to `errored.tfstate`; recovery was to fix the
+  policy with the CLI and `terraform state push`.
+- **"No changes" is sometimes the dangerous answer.** After migrating RDS
+  to an encrypted instance, `terraform plan` reported no differences —
+  because it was still tracking the *old* instance, which still existed
+  and still matched the configuration. Deleting that instance would have
+  left Terraform ready to recreate it: a fresh, empty, unencrypted
+  database, while the real one sat unmanaged. `state rm` plus `import`
+  reconciled it.
+- **A container can be `Running` and `2/2` and serve 500s on every real
+  request.** Capping `MaxMetaspaceSize` at 128m was too small for WildFly's
+  module count. The JVM threw `OutOfMemoryError: Metaspace` while loading
+  classes, but never exited — so the pod stayed healthy by every signal
+  Kubernetes checks. The readiness probe pointed at `/api/ping`, which
+  touches nothing, and returned 200 throughout. A probe that exercises the
+  database would have caught it.
+- **Understating a container's memory request causes the eviction, not the
+  limit.** The app requested 384Mi and used ~403Mi, so the scheduler placed
+  it on nodes where it did not fit and the kubelet evicted it — for days,
+  producing hundreds of dead pods. Raising the request to measured usage
+  and adding a priority class (everything ran at priority 0, so the kubelet
+  always picked the largest consumer) fixed the loop; moving to `t3.small`
+  fixed the underlying ceiling.
+- **The distribution shipped audit logging configured not to audit.**
+  `/etc/audit/rules.d/audit.rules` on Fedora contains `-D` followed by
+  `-a task,never`, with a header stating it exists "to negate the
+  performance effects of the audit system by preventing syscall auditing
+  to work." Custom rules load without error, appear in `auditctl -l`, and
+  record nothing. A check for "auditd enabled with rules loaded" passes on
+  a system that audits nothing.
+- **FIPS mode breaks Ed25519 SSH keys.** Ed25519 is not NIST-approved, so
+  with the FIPS crypto policy enabled the client will not offer it —
+  `git push` failed with `Permission denied (publickey)` against a key
+  that was correctly registered on the remote. An RSA key worked
+  immediately. Enabling a compliance control silently disabled the modern
+  default key type.
+- **Take a snapshot before touching a bootloader.** Adding `fips=1` via
+  `grubby` wrote a malformed `boot=UUID=` parameter into the kernel line,
+  and the VM dropped to a GRUB syntax error on every boot. It was
+  recoverable by editing the boot line from the GRUB menu, but the box was
+  rebuilt instead. `vagrant snapshot save` takes seconds and would have made
+  it a one-command rollback.
+- **Two clones of the same repo drift, and `vagrant up` reads only one of
+  them.** The Windows clone sat seven commits behind while all the work
+  happened in the VM's clone. The rebuilt box therefore provisioned from a
+  week-old `provision.sh` with no audit rules — and the step that should
+  have installed them was guarded by `|| true`, so provisioning reported
+  success while silently doing nothing. Defensive error suppression hid
+  exactly the failure it was added to tolerate.
+
 ---
 
 ## Roadmap
@@ -1014,6 +1426,8 @@ issues is a meaningful part of what this project demonstrates.
 - [x] Phase 4 — Infrastructure as code (Terraform), OIDC-based GitHub Actions CI/CD pipeline, minimal frontend dashboard, verified live end-to-end on AWS (ECS/Fargate)
 - [x] Phase 5 — Re-architected onto EKS: Route53 + ExternalDNS, Let's Encrypt via cert-manager (bridged into ACM), AWS WAF, and a full Istio service mesh with STRICT mutual TLS between pods. CI/CD pipeline re-pointed from ECS to EKS with proper Kubernetes RBAC access.
 - [x] Phase 6 — Reproducible Vagrant/Fedora dev environment; Terraform state migrated to a versioned S3 backend; full destroy-and-rebuild of the EKS stack from an empty state file, with nine rebuild-only defects found and fixed and a written rebuild runbook
+- [x] Phase 7 — Security hardening: customer-managed KMS key with rotation, EBS and RDS encryption (snapshot/copy/restore migration), state bucket hardened, WAF rate limiting and scanner blocking verified by request, container base image moved off EOL CentOS 7 to RHEL 9 cutting CRITICAL/HIGH findings from 199 to 60, nodes right-sized off the free tier, SELinux and auditd verified, FIPS scoped at the AWS and OS crypto-policy layers
+- [ ] Phase 8 — Dynamic application security testing: scan the running application with OWASP ZAP against the local stack, triage what the WAF catches versus what reaches the app, and fix what the tracker finds in itself
 - [ ] Next — VPC CNI prefix delegation in Terraform (currently a manual `kubectl` step), Helm installs scripted rather than documented, `terraform-ecs/` moved to the S3 backend, automated Let's Encrypt → ACM renewal (currently a manual bridge), External Secrets Operator instead of manually-synced Kubernetes Secrets, tighter IAM scoping on the remaining broad grants
 
 ---
