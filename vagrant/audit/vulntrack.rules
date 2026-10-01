@@ -1,0 +1,31 @@
+-b 8192
+
+## Identity and authentication changes
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/sudoers -p wa -k privilege
+-w /etc/sudoers.d/ -p wa -k privilege
+
+## Credentials granting access to the cloud environment (reads included)
+-w /home/vagrant/.aws/ -p rwa -k cloud_creds
+-w /home/vagrant/.kube/ -p rwa -k cloud_creds
+-w /home/vagrant/.ssh/ -p rwa -k ssh_keys
+
+## Privilege escalation
+-a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=unset -k priv_exec
+-a always,exit -F path=/usr/bin/su -F perm=x -F auid>=1000 -F auid!=unset -k priv_exec
+
+## Tooling that changes infrastructure
+-w /usr/bin/docker -p x -k container_exec
+-w /usr/bin/kubectl -p x -k k8s_exec
+-w /usr/bin/terraform -p x -k iac_exec
+
+## Attempts to change the audit configuration itself
+-w /etc/audit/ -p wa -k audit_config
+-w /sbin/auditctl -p x -k audit_tools
+-w /sbin/auditd -p x -k audit_tools
+
+## Failed file access attempts
+-a always,exit -F arch=b64 -S open,openat,creat -F exit=-EACCES -k access_denied
+-a always,exit -F arch=b64 -S open,openat,creat -F exit=-EPERM -k access_denied

@@ -75,3 +75,14 @@ sudo -u vagrant sed -i 's|^ZSH_THEME=.*|ZSH_THEME="powerlevel10k/powerlevel10k"|
 sudo -u vagrant sed -i 's|^plugins=.*|plugins=(git docker docker-compose kubectl helm terraform aws fzf zsh-autosuggestions zsh-syntax-highlighting)|' /home/vagrant/.zshrc
 chsh -s /bin/zsh vagrant
 install -o vagrant -g vagrant -m 644 /vagrant/p10k.zsh /home/vagrant/.p10k.zsh 2>/dev/null || true
+
+# Audit logging. Fedora ships /etc/audit/rules.d/audit.rules containing "-D"
+# followed by "-a task,never" - its own header says it exists "to negate the
+# performance effects of the audit system by preventing syscall auditing to
+# work". Rules added alongside it load without error and appear in auditctl -l,
+# but record nothing, because that file wipes the ruleset and disables syscall
+# auditing first. Rename it out of the way (augenrules only reads *.rules).
+dnf -y install audit
+mv /etc/audit/rules.d/audit.rules /etc/audit/rules.d/audit.rules.disabled 2>/dev/null || true
+install -o root -g root -m 600 /tmp/vulntrack-audit.rules /etc/audit/rules.d/vulntrack.rules 2>/dev/null || true
+augenrules --load 2>/dev/null || true
