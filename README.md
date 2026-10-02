@@ -908,8 +908,6 @@ cannot be fixed." Two changes:
 | HIGH | 187 | **56** |
 | **Total** | **199** | **60** |
 
-![Before and after the base image change](docs/screenshots/p7-07-trivy-before-after.png)
-
 A 70% reduction, and the remaining OS findings now sit on a distribution
 that still ships patches. The scan output is committed under
 [`docs/security/`](docs/security/) so the claim is checkable.
