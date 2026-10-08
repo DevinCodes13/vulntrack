@@ -1020,6 +1020,13 @@ What was implemented:
   SSH algorithms and certificate signatures — 61 TLS ciphers down to 40 on
   this image
 
+![Crypto policy before FIPS](docs/screenshots/p7-10-fips-crypto-policy-before.png)
+![Crypto policy after FIPS](docs/screenshots/p7-11-fips-crypto-policy-after.png)
+*Before and after `update-crypto-policies --set FIPS` — the cipher count drops
+and the weak suites go, but note MD5 still runs: the system-wide policy governs
+protocol-level algorithm selection, not direct hash calls. That needs the kernel
+flag.*
+
 The crypto policy change had an immediate practical consequence worth
 recording: **SSH authentication with an Ed25519 key stopped working.**
 Ed25519 is not a NIST-approved algorithm, so a FIPS-restricted client will
@@ -1425,6 +1432,7 @@ issues is a meaningful part of what this project demonstrates.
 - [x] Phase 5 — Re-architected onto EKS: Route53 + ExternalDNS, Let's Encrypt via cert-manager (bridged into ACM), AWS WAF, and a full Istio service mesh with STRICT mutual TLS between pods. CI/CD pipeline re-pointed from ECS to EKS with proper Kubernetes RBAC access.
 - [x] Phase 6 — Reproducible Vagrant/Fedora dev environment; Terraform state migrated to a versioned S3 backend; full destroy-and-rebuild of the EKS stack from an empty state file, with nine rebuild-only defects found and fixed and a written rebuild runbook
 - [x] Phase 7 — Security hardening: customer-managed KMS key with rotation, EBS and RDS encryption (snapshot/copy/restore migration), state bucket hardened, WAF rate limiting and scanner blocking verified by request, container base image moved off EOL CentOS 7 to RHEL 9 cutting CRITICAL/HIGH findings from 199 to 60, nodes right-sized off the free tier, SELinux and auditd verified, FIPS scoped at the AWS and OS crypto-policy layers
+- [ ] Monitor certificate expiry — cert-manager renews at 30 days remaining, but nothing alerts if it fails silently, and Let's Encrypt ended its expiration notification email service in June 2025. A check against the live endpoint (not a calendar reminder) is the right control.
 - [ ] Phase 8 — Dynamic application security testing: scan the running application with OWASP ZAP against the local stack, triage what the WAF catches versus what reaches the app, and fix what the tracker finds in itself
 - [ ] Next — VPC CNI prefix delegation in Terraform (currently a manual `kubectl` step), Helm installs scripted rather than documented, `terraform-ecs/` moved to the S3 backend, automated Let's Encrypt → ACM renewal (currently a manual bridge), External Secrets Operator instead of manually-synced Kubernetes Secrets, tighter IAM scoping on the remaining broad grants
 
