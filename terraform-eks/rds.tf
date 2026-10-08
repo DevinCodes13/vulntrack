@@ -19,11 +19,18 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
   }
 
+  # RDS is a managed service: AWS handles patching, backups and monitoring over
+  # its own control plane, not through this security group. The instance itself
+  # has no reason to originate traffic to the internet, so egress is restricted
+  # to the VPC. Unrestricted egress on a database is an exfiltration path, not a
+  # functional requirement - the default allow-all rule is a convenience default,
+  # not a considered one.
   egress {
+    description = "Postgres responses within the VPC only"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   tags = {
