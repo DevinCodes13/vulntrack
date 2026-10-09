@@ -1,6 +1,7 @@
 package com.devincodes.vulntrack.model;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "app_user")
@@ -13,7 +14,10 @@ public class AppUser {
     @Column(nullable = false, unique = true)
     private String username;
 
+    // WRITE_ONLY: accepted on input, never serialised out. Phase 8 found
+    // GET /users returning every account's bcrypt hash to any logged-in user.
     @Column(nullable = false)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordHash;
 
     public String getPasswordHash() { return passwordHash; }
