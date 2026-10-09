@@ -1081,6 +1081,7 @@ Tool used: **OWASP ZAP**, run in two modes.
 ### Step 1 — Passive baseline scan
 
 ![ZAP baseline scan summary](docs/screenshots/p8-01-zap-baseline-summary.png)
+![ZAP baseline alert detail](docs/screenshots/p8-02-zap-baseline-alerts.png)
 
 The baseline run flagged missing HTTP security response headers. These are
 instructions the server sends telling the browser what it is and is not allowed
@@ -1113,27 +1114,7 @@ So the inline code was extracted first: `app.css` (269 lines) and `app.js`
 `script-src 'self'` be set honestly.
 
 ![Baseline rerun after the filter](docs/screenshots/p8-03-zap-baseline-after-fixes.png)
-
-**The warning count went up, and that is the correct outcome.** The rerun reports
-9 warnings and 58 passes against the first run's 8 and 59. Diffing the two reports
-shows exactly one new alert: rule **10055, `CSP: style-src unsafe-inline`**. That
-alert cannot fire until a Content-Security-Policy exists for ZAP to evaluate —
-before the filter there was no policy, so there was nothing to criticise. The rerun
-also registers a new `application/javascript` endpoint, because extracting the inline
-script created `app.js` as a separately fetchable resource the scanner can now see.
-
-Both changes mean more surface was inspected, not that less is secure. Alert counts
-are not a security metric — the same lesson the authenticated API scan teaches
-from the other direction in Step 4.
 ![Response headers via curl -I](docs/screenshots/p8-04-security-headers-curl.png)
-
-**Smoke test.** Extracting 530 lines out of `index.html` is the kind of refactor that
-silently breaks a frontend. The dashboard was loaded and exercised afterwards: styling
-intact, login working, data rendering, and a clean browser console with no CSP
-violations reported. A CSP that blocks your own application is a self-inflicted outage,
-so this check is not optional after a policy change.
-
-![Application working after the CSS/JS extraction](docs/screenshots/p8-09-smoke-test-ui-after-extraction.png)
 
 ### Step 3 — Authenticated active API scan
 
@@ -1141,6 +1122,7 @@ A passive scan barely touches an API, because a spider cannot guess REST
 endpoints. ZAP needs a map. Hand-wrote `docs/security/vulntrack-openapi.yaml`
 describing every endpoint, method, and request body.
 
+![OpenAPI spec](docs/screenshots/p8-05-openapi-spec.png)
 
 Authentication was supplied by injecting a bearer token into every request with
 ZAP's replacer option, so the scanner tested the application as a logged-in user
@@ -1149,6 +1131,7 @@ rather than bouncing off the login wall:
 DELETE operations were deliberately left out of the spec so the active scan
 could not destroy the dataset mid-run.
 
+![API scan summary](docs/screenshots/p8-06-zap-api-scan-summary.png)
 
 **Result: 118 passes, zero failures.** No SQL injection, no reflected XSS, no
 path traversal, no command injection. The parameterized JPA queries and bean
@@ -1661,10 +1644,8 @@ issues is a meaningful part of what this project demonstrates.
 - [x] Phase 5 — Re-architected onto EKS: Route53 + ExternalDNS, Let's Encrypt via cert-manager (bridged into ACM), AWS WAF, and a full Istio service mesh with STRICT mutual TLS between pods. CI/CD pipeline re-pointed from ECS to EKS with proper Kubernetes RBAC access.
 - [x] Phase 6 — Reproducible Vagrant/Fedora dev environment; Terraform state migrated to a versioned S3 backend; full destroy-and-rebuild of the EKS stack from an empty state file, with nine rebuild-only defects found and fixed and a written rebuild runbook
 - [x] Phase 7 — Security hardening: customer-managed KMS key with rotation, EBS and RDS encryption (snapshot/copy/restore migration), state bucket hardened, WAF rate limiting and scanner blocking verified by request, container base image moved off EOL CentOS 7 to RHEL 9 cutting CRITICAL/HIGH findings from 199 to 60, nodes right-sized off the free tier, SELinux and auditd verified, FIPS scoped at the AWS and OS crypto-policy layers
-- [x] Phase 8 — Dynamic application security testing: OWASP ZAP passive baseline plus an authenticated active API scan (118 passes, zero failures) driven by a hand-written OpenAPI spec. Full security header set added via a servlet filter, with the CSP made meaningful by first extracting ~530 lines of inline CSS and JS so `script-src 'self'` could be set without `'unsafe-inline'`. Manual access-control testing then found two vulnerabilities the scanner missed: bcrypt password hashes serialized to any authenticated user, and an ANALYST able to set `role: ADMIN` on any account including their own — anonymous to administrator in three HTTP requests. Both remediated and verified, with the legitimate self-read path confirmed still working.
 - [ ] Monitor certificate expiry — cert-manager renews at 30 days remaining, but nothing alerts if it fails silently, and Let's Encrypt ended its expiration notification email service in June 2025. A check against the live endpoint (not a calendar reminder) is the right control.
-- [ ] Audit logging for privileged mutations — Phase 8 found a privilege escalation path, and nothing in the application recorded its use. Role changes, user creation and deletion should write an immutable record (actor, target, old value, new value, timestamp) so that "was this exploited before it was found?" is an answerable question rather than a guess.
-- [ ] Move the JWT out of `sessionStorage` into an httpOnly, `Secure`, `SameSite=Strict` cookie — removes XSS token theft, but introduces CSRF exposure that needs its own mitigation first. Documented as an accepted risk in Phase 8 rather than swapped blindly for a different class of bug.
+- [ ] Phase 8 — Dynamic application security testing: scan the running application with OWASP ZAP against the local stack, triage what the WAF catches versus what reaches the app, and fix what the tracker finds in itself
 - [ ] Next — VPC CNI prefix delegation in Terraform (currently a manual `kubectl` step), Helm installs scripted rather than documented, `terraform-ecs/` moved to the S3 backend, automated Let's Encrypt → ACM renewal (currently a manual bridge), External Secrets Operator instead of manually-synced Kubernetes Secrets, tighter IAM scoping on the remaining broad grants
 
 ---

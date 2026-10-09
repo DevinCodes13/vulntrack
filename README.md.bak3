@@ -1081,6 +1081,7 @@ Tool used: **OWASP ZAP**, run in two modes.
 ### Step 1 — Passive baseline scan
 
 ![ZAP baseline scan summary](docs/screenshots/p8-01-zap-baseline-summary.png)
+![ZAP baseline alert detail](docs/screenshots/p8-02-zap-baseline-alerts.png)
 
 The baseline run flagged missing HTTP security response headers. These are
 instructions the server sends telling the browser what it is and is not allowed
@@ -1113,27 +1114,7 @@ So the inline code was extracted first: `app.css` (269 lines) and `app.js`
 `script-src 'self'` be set honestly.
 
 ![Baseline rerun after the filter](docs/screenshots/p8-03-zap-baseline-after-fixes.png)
-
-**The warning count went up, and that is the correct outcome.** The rerun reports
-9 warnings and 58 passes against the first run's 8 and 59. Diffing the two reports
-shows exactly one new alert: rule **10055, `CSP: style-src unsafe-inline`**. That
-alert cannot fire until a Content-Security-Policy exists for ZAP to evaluate —
-before the filter there was no policy, so there was nothing to criticise. The rerun
-also registers a new `application/javascript` endpoint, because extracting the inline
-script created `app.js` as a separately fetchable resource the scanner can now see.
-
-Both changes mean more surface was inspected, not that less is secure. Alert counts
-are not a security metric — the same lesson the authenticated API scan teaches
-from the other direction in Step 4.
 ![Response headers via curl -I](docs/screenshots/p8-04-security-headers-curl.png)
-
-**Smoke test.** Extracting 530 lines out of `index.html` is the kind of refactor that
-silently breaks a frontend. The dashboard was loaded and exercised afterwards: styling
-intact, login working, data rendering, and a clean browser console with no CSP
-violations reported. A CSP that blocks your own application is a self-inflicted outage,
-so this check is not optional after a policy change.
-
-![Application working after the CSS/JS extraction](docs/screenshots/p8-09-smoke-test-ui-after-extraction.png)
 
 ### Step 3 — Authenticated active API scan
 
@@ -1141,6 +1122,7 @@ A passive scan barely touches an API, because a spider cannot guess REST
 endpoints. ZAP needs a map. Hand-wrote `docs/security/vulntrack-openapi.yaml`
 describing every endpoint, method, and request body.
 
+![OpenAPI spec](docs/screenshots/p8-05-openapi-spec.png)
 
 Authentication was supplied by injecting a bearer token into every request with
 ZAP's replacer option, so the scanner tested the application as a logged-in user
@@ -1149,6 +1131,7 @@ rather than bouncing off the login wall:
 DELETE operations were deliberately left out of the spec so the active scan
 could not destroy the dataset mid-run.
 
+![API scan summary](docs/screenshots/p8-06-zap-api-scan-summary.png)
 
 **Result: 118 passes, zero failures.** No SQL injection, no reflected XSS, no
 path traversal, no command injection. The parameterized JPA queries and bean

@@ -1081,6 +1081,7 @@ Tool used: **OWASP ZAP**, run in two modes.
 ### Step 1 — Passive baseline scan
 
 ![ZAP baseline scan summary](docs/screenshots/p8-01-zap-baseline-summary.png)
+![ZAP baseline alert detail](docs/screenshots/p8-02-zap-baseline-alerts.png)
 
 The baseline run flagged missing HTTP security response headers. These are
 instructions the server sends telling the browser what it is and is not allowed
@@ -1141,6 +1142,7 @@ A passive scan barely touches an API, because a spider cannot guess REST
 endpoints. ZAP needs a map. Hand-wrote `docs/security/vulntrack-openapi.yaml`
 describing every endpoint, method, and request body.
 
+![OpenAPI spec](docs/screenshots/p8-05-openapi-spec.png)
 
 Authentication was supplied by injecting a bearer token into every request with
 ZAP's replacer option, so the scanner tested the application as a logged-in user
@@ -1149,6 +1151,7 @@ rather than bouncing off the login wall:
 DELETE operations were deliberately left out of the spec so the active scan
 could not destroy the dataset mid-run.
 
+![API scan summary](docs/screenshots/p8-06-zap-api-scan-summary.png)
 
 **Result: 118 passes, zero failures.** No SQL injection, no reflected XSS, no
 path traversal, no command injection. The parameterized JPA queries and bean
