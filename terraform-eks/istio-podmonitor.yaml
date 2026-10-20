@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-proxies
+  namespace: monitoring
+spec:
+  # Watch every namespace - the app is in default, the gateway in istio-system.
+  namespaceSelector:
+    any: true
+  # Empty selector matches all pods; only pods that actually have the
+  # named Envoy metrics port end up as scrape targets, which is exactly
+  # the injected sidecars plus the ingress gateway.
+  selector: {}
+  podMetricsEndpoints:
+    - port: http-envoy-prom
+      path: /stats/prometheus
+      interval: 15s

@@ -1,0 +1,55 @@
+fullnameOverride: kps
+
+# EKS runs the control plane as a managed service, so etcd, the scheduler
+# and the controller-manager are not reachable from inside the cluster.
+# Left enabled, their scrape jobs fail forever and their alert rules fire
+# permanently against targets that do not exist - the fastest way to teach
+# yourself to ignore alerts.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    # No persistent volume: the EBS CSI driver is not installed and this
+    # cluster is rebuilt from scratch between sessions. Metrics are
+    # session-scoped by design.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 700Mi
+      limits:
+        memory: 1500Mi
+    # By default the operator only picks up monitors this chart created.
+    # These four lines let it see the Istio PodMonitor added next.
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

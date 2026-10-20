@@ -32,3 +32,4 @@ tfplan
 
 # Trivy JSON output is large; keep the human-readable .txt instead
 docs/security/*.json
+terraform-eks/alertmanager-ses-values.yaml

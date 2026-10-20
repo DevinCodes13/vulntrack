@@ -1,0 +1,95 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vulntrack-slo
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: vulntrack-sli
+      interval: 30s
+      rules:
+        # Error ratio = 5xx responses / all responses, over several windows.
+        # 4xx is excluded deliberately: a 404 to a scanner is the app working.
+        - record: vulntrack:error:ratio_rate5m
+          expr: |
+            sum(rate(istio_requests_total{destination_workload="vulntrack",response_code=~"5.."}[5m]))
+            /
+            sum(rate(istio_requests_total{destination_workload="vulntrack"}[5m]))
+        - record: vulntrack:error:ratio_rate30m
+          expr: |
+            sum(rate(istio_requests_total{destination_workload="vulntrack",response_code=~"5.."}[30m]))
+            /
+            sum(rate(istio_requests_total{destination_workload="vulntrack"}[30m]))
+        - record: vulntrack:error:ratio_rate1h
+          expr: |
+            sum(rate(istio_requests_total{destination_workload="vulntrack",response_code=~"5.."}[1h]))
+            /
+            sum(rate(istio_requests_total{destination_workload="vulntrack"}[1h]))
+        - record: vulntrack:error:ratio_rate6h
+          expr: |
+            sum(rate(istio_requests_total{destination_workload="vulntrack",response_code=~"5.."}[6h]))
+            /
+            sum(rate(istio_requests_total{destination_workload="vulntrack"}[6h]))
+
+        # Latency SLI: share of requests completing under 500ms.
+        - record: vulntrack:latency:good_ratio_rate5m
+          expr: |
+            sum(rate(istio_request_duration_milliseconds_bucket{destination_workload="vulntrack",le="500"}[5m]))
+            /
+            sum(rate(istio_request_duration_milliseconds_count{destination_workload="vulntrack"}[5m]))
+
+        # Request rate, used below as a guard against alerting on tiny samples.
+        - record: vulntrack:request:rate5m
+          expr: sum(rate(istio_requests_total{destination_workload="vulntrack"}[5m]))
+
+    - name: vulntrack-slo-alerts
+      rules:
+        # Fast burn: spending the 30-day budget 14.4x too quickly, confirmed
+        # over both a short and a long window so one bad moment cannot page you.
+        - alert: VulnTrackErrorBudgetFastBurn
+          expr: |
+            vulntrack:error:ratio_rate5m > 0.144
+            and vulntrack:error:ratio_rate1h > 0.144
+            and vulntrack:request:rate5m > 0.05
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "VulnTrack is burning its error budget 14x too fast"
+            description: "5xx rate is above 14.4% over both 5m and 1h. At this rate the entire 30-day error budget is gone in about two days."
+
+        # Slow burn: a persistent problem rather than an outage.
+        - alert: VulnTrackErrorBudgetSlowBurn
+          expr: |
+            vulntrack:error:ratio_rate30m > 0.06
+            and vulntrack:error:ratio_rate6h > 0.06
+            and vulntrack:request:rate5m > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VulnTrack is slowly burning its error budget"
+            description: "5xx rate above 6% over both 30m and 6h. Not an outage, but the budget will be exhausted well before month end."
+
+        # The app is gone. No burn-rate maths can see this, because an app
+        # serving zero requests has no error ratio at all.
+        - alert: VulnTrackDown
+          expr: kube_deployment_status_replicas_available{deployment="vulntrack",namespace="default"} < 1
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "VulnTrack has no available replicas"
+            description: "The deployment reports fewer than one ready pod for 3 minutes."
+
+        # Prometheus stopped scraping the sidecars - the monitoring itself broke.
+        - alert: VulnTrackMetricsMissing
+          expr: absent(vulntrack:request:rate5m)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No request metrics from VulnTrack for 10 minutes"
+            description: "Either the app is receiving no traffic at all, or Prometheus has stopped scraping the Istio sidecars."

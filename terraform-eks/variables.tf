@@ -35,9 +35,9 @@ variable "cluster_version" {
 }
 
 variable "node_instance_types" {
-  description = "EC2 instance types for the managed node group. t3.small. Started on t3.micro for free-tier eligibility, but 1GB per node (~520Mi allocatable) could not hold WildFly plus an Envoy sidecar - the app was evicted repeatedly and the WildFly 40 upgrade made it unschedulable entirely. Three t3.small nodes cost roughly the same as five micros and leave real headroom."
+  description = "EC2 instance types for the managed node group. t3.small. Started on t3.micro for free-tier eligibility, but 1GB per node (~520Mi allocatable) could not hold WildFly plus an Envoy sidecar - the app was evicted repeatedly and the WildFly 40 upgrade made it unschedulable entirely. Three t3.small nodes cost roughly the same as five micros and leave real headroom. Raised again to t3.medium in Phase 9: Prometheus needs ~1GB contiguous on a single node and t3.small (~1.5Gi allocatable) had nowhere to put it without evicting WildFly. The delta is about $0.02/node/hour, negligible next to the EKS control plane."
   type        = list(string)
-  default     = ["t3.small"]
+  default     = ["t3.medium"]
 }
 
 variable "node_desired_size" {
