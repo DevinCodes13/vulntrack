@@ -48,6 +48,7 @@ code for both is preserved in this repo.
 - [Phase 6: Proving the rebuild](#phase-6-proving-the-rebuild)
 - [Phase 7: Hardening what was already running](#phase-7-hardening-what-was-already-running)
 - [Phase 8: Dynamic application security testing](#phase-8-dynamic-application-security-testing)
+- [Phase 9: Monitoring, SLOs, and alerts worth reading](#phase-9-monitoring-slos-and-alerts-worth-reading)
 - [CI/CD pipeline](#cicd-pipeline)
 - [Local development setup](#local-development-setup)
 - [Troubleshooting log & lessons learned](#troubleshooting-log--lessons-learned)
@@ -664,6 +665,12 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n ku
   --set serviceAccount.name=aws-load-balancer-controller \
   --set region=us-east-2 --set vpcId=$(terraform output -raw vpc_id)
 
+# 3b. Wait for the Load Balancer Controller before anything creates a
+#     Service. It registers a mutating webhook; installing ExternalDNS
+#     while the controller has no running pods fails with
+#     'no endpoints available for service aws-load-balancer-webhook-service'.
+kubectl -n kube-system rollout status deployment aws-load-balancer-controller
+
 # 4. ExternalDNS
 helm install external-dns external-dns/external-dns -n kube-system -f external-dns-values.yaml
 
@@ -693,9 +700,22 @@ kubectl create secret generic vulntrack-secrets \
   --from-literal=JWT_SIGNING_KEY="$JWT"
 
 # 8. App, mesh policy, and — last — the Ingress, which creates the ALB
+# The PriorityClass must exist first - the Deployment references it by
+# name and Kubernetes rejects a pod whose PriorityClass is missing.
+kubectl apply -f vulntrack-priorityclass.yaml
 kubectl apply -f vulntrack-deployment.yaml -f vulntrack-service.yaml
 kubectl apply -f vulntrack-certificate.yaml -f istio-routing.yaml -f peer-authentication.yaml
+# The Ingress hardcodes the WAF Web ACL ARN. Terraform recreates the Web
+# ACL on every rebuild with a NEW id, so refresh it first or the ALB is
+# created but never reports its address:
+#   NEWARN=$(terraform output -raw waf_web_acl_arn)
+#   sed -i "s|arn:aws:wafv2:[^ ]*|$NEWARN|" vulntrack-ingress.yaml
 kubectl apply -f vulntrack-ingress.yaml
+
+# 9. metrics-server - not shipped with EKS. Without it 'kubectl top'
+#    returns 'Metrics API not available'.
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl -n kube-system rollout status deployment metrics-server
 ```
 
 Checks worth running before calling it done: pods show `2/2` (sidecar
@@ -706,6 +726,23 @@ TXT records alongside A/AAAA, and the WAF lists the *current* ALB.
 > ARN. That certificate is imported (see Phase 5's manual Let's Encrypt →
 > ACM bridge) and lives outside Terraform, so it survives a destroy — but
 > it also has to be re-imported before it expires.
+
+
+**Teardown order matters.** `terraform destroy` does not remove the ALB: the AWS
+Load Balancer Controller created it in response to the Kubernetes Ingress, so
+Terraform has no record of it. Left behind, it holds network interfaces and
+security groups inside the VPC, the VPC refuses to delete, and the rest has to
+be cleaned up by hand.
+
+```bash
+# Delete the Ingress FIRST and let the controller remove its own ALB.
+kubectl delete ingress vulntrack -n istio-system
+sleep 60
+terraform destroy
+```
+
+If a destroy has already stranded an ALB, delete it (and the `k8s-*` security
+groups the controller created) manually, then re-run `terraform destroy`.
 
 ---
 
@@ -1282,6 +1319,290 @@ find *logic* flaws, because only a human knows what the application is supposed
 to mean. Running one and calling it security testing is how a three-request path
 to administrator ships to production.
 
+## Phase 9: Monitoring, SLOs, and alerts worth reading
+
+**Goal:** be able to answer "how would I know if this broke?"
+
+Phases 1-8 built the application, hardened the infrastructure, and tested the
+app from the outside. None of that answers the question above. The evidence was
+already in this project: in Phase 7 a pod eviction loop ran for **days** and
+left hundreds of dead pods before anyone noticed, and it was found by looking,
+not by being told.
+
+### What was installed, in plain terms
+
+| Component | What it does |
+| --- | --- |
+| **Prometheus** | Asks every component "how are you doing?" every 15 seconds and stores the answers as numbers over time |
+| **Grafana** | Draws those numbers as graphs |
+| **Alertmanager** | Decides when a number is bad enough to email about, and who to tell |
+| **node-exporter** | Reports CPU, memory and disk from each node |
+| **kube-state-metrics** | Reports what Kubernetes thinks the state of each object is |
+| **metrics-server** | Serves live resource numbers to `kubectl top` |
+
+The last one is worth separating out. **metrics-server and Prometheus are not
+the same thing and installing one does not give you the other.** metrics-server
+answers "how much memory is this pod using right now" and keeps nothing;
+Prometheus keeps history so you can ask what happened an hour ago. A fresh EKS
+cluster has neither.
+
+### Making room first
+
+The monitoring stack needs roughly 1.3 GB, and Prometheus wants about 1 GB of it
+**on a single node** - a pod cannot be spread across two machines. The existing
+`t3.small` nodes offered around 1.5 GiB each with the application already using
+most of it, so the node group was moved to `t3.medium` before anything was
+installed.
+
+| Node | Before monitoring | After monitoring |
+| --- | --- | --- |
+| node 1 | 657Mi (19%) | 1089Mi (33%) |
+| node 2 | 1156Mi (35%) | **1895Mi (57%)** |
+| node 3 | 660Mi (20%) | 831Mi (25%) |
+| **Total** | **2473Mi** | **3815Mi** |
+
+Node 2 is where Prometheus landed. At 1895Mi it would not have fit on a
+`t3.small` at all - this was not a close call, and the numbers say so. The
+instance type change is recorded in `variables.tf` with the reasoning attached,
+alongside the earlier note about why `t3.micro` failed in Phase 7.
+
+![Node CPU, load and memory in Grafana](docs/screenshots/p9-01-grafana-node-resources.png)
+![Per-pod CPU and memory in Grafana](docs/screenshots/p9-02-grafana-pod-resources.png)
+
+### Where the measurements come from
+
+The application is a Jakarta EE app that exposes no metrics of its own. It did
+not need to.
+
+Phase 5 put Istio in front of every pod, and each Envoy sidecar has been
+counting every request passing through it ever since - request totals, HTTP
+status codes, and latency distributions, in exactly the format Prometheus reads.
+That data had simply never been collected.
+
+A single `PodMonitor` object was enough to start collecting it:
+
+```yaml
+spec:
+  namespaceSelector:
+    any: true
+  selector: {}
+  podMetricsEndpoints:
+    - port: http-envoy-prom
+      path: /stats/prometheus
+      interval: 15s
+```
+
+An empty selector matches every pod; only pods that actually expose the named
+Envoy metrics port become scrape targets, which is precisely the injected
+sidecars plus the ingress gateway. **No application code was changed to make
+this phase possible.**
+
+![Request rate by response code in Grafana](docs/screenshots/p9-05-grafana-request-rate.png)
+
+### The first real lesson: a scanner is not an outage
+
+The first useful numbers out of Prometheus looked alarming:
+
+| Response code | Count |
+| --- | --- |
+| 200 | 158 |
+| 302 | 4 |
+| 401 | 2 |
+| **404** | **374** |
+
+More than twice as many 404s as successes. Under the obvious definition of
+availability - "non-error responses divided by all responses" - the service was
+sitting at about 30% while working perfectly.
+
+Those 404s were internet background noise. A publicly reachable endpoint is
+probed continuously for `/wp-admin`, `/.env` and similar. The WAF blocks the
+obviously malicious ones; the rest reach the application, which correctly
+answers "that page does not exist."
+
+**A 404 is the right answer to a wrong question, not a failure.** Counting it as
+one would have produced an SLO that was permanently violated by strangers, and
+an alert that fired forever and taught its owner to ignore it. So the SLI counts
+only 5xx responses as failures, and the reasoning is recorded in the rules file
+rather than left implicit.
+
+### The SLOs
+
+| SLI | Definition | Target (30 days) |
+| --- | --- | --- |
+| Availability | Requests not returning 5xx, over all requests | 99% |
+| Latency | Requests completing in under 500ms | 95% |
+
+99% allows roughly **7.2 hours** of failure per month. That is deliberately
+modest: a single-replica application on a cluster that gets destroyed between
+working sessions cannot honestly claim more. An SLO that the system cannot meet
+is not a target, it is a permanent alarm.
+
+Six recording rules compute the error ratio over 5m, 30m, 1h and 6h windows,
+plus the latency ratio and the raw request rate. Computing them once and storing
+the result keeps the alert expressions short and makes them cheap to evaluate.
+
+### Burn-rate alerting
+
+Alerting on "any error" pages you at 3am because one request failed. Alerting on
+"more than 5% errors" misses a slow leak that quietly drains the month's budget.
+
+Burn rate measures **how fast the error budget is being spent relative to the
+rate that would exhaust it exactly at month end.** A burn rate of 1 means the
+budget runs out precisely on the last day. A burn rate of 14.4 means it is gone
+in about two days.
+
+Each alert requires the condition to hold over **two windows at once** - a short
+one and a long one - so a brief spike cannot page anyone, and a sustained
+problem cannot hide inside an averaged window.
+
+| Alert | Condition | Severity |
+| --- | --- | --- |
+| `VulnTrackErrorBudgetFastBurn` | 5xx > 14.4% over both 5m and 1h | critical |
+| `VulnTrackErrorBudgetSlowBurn` | 5xx > 6% over both 30m and 6h | warning |
+| `VulnTrackDown` | Fewer than 1 available replica for 3m | critical |
+| `VulnTrackMetricsMissing` | No request metrics at all for 10m | warning |
+
+Each alert also requires a minimum request rate. At low traffic a single failed
+request can swing a ratio wildly, and an alert that fires on a sample of two is
+noise wearing a lab coat.
+
+The last two exist because burn-rate maths has a blind spot: **an application
+serving zero requests has no error ratio at all.** A completely dead service
+produces a perfectly clean SLI. `VulnTrackDown` watches replica count directly,
+and `VulnTrackMetricsMissing` fires if the monitoring itself stops working -
+because a monitoring system that fails silently is worse than none, since it
+also produces confidence.
+
+![Alert rules evaluating in Prometheus](docs/screenshots/p9-06-alert-rules-evaluating.png)
+
+### Keeping the inbox worth opening
+
+kube-prometheus-stack ships dozens of generic alerts. Routed to email by
+default, they would deliver a steady trickle of messages about things that are
+not wrong, and within a fortnight none of them would be read. That is not a
+hypothetical: this project already has a worked example, in a billing alarm that
+fired for weeks against a threshold below the normal baseline and was
+successfully ignored until it mattered.
+
+So Alertmanager's default receiver is `null`, and exactly one route sends
+anything:
+
+```yaml
+route:
+  receiver: 'null'
+  routes:
+    - receiver: 'email'
+      matchers:
+        - alertname =~ "VulnTrack.*"
+```
+
+Everything else still evaluates and stays visible in the UI. Only the four
+alerts written deliberately for this application can reach an inbox. The fix for
+alert fatigue is fewer alerts, not more discipline.
+
+Three EKS-specific sources of permanent noise were also disabled at install
+time. AWS runs etcd, the scheduler and the controller-manager as a managed
+service that is not reachable from inside the cluster, so their default scrape
+jobs fail forever and their alert rules fire against targets that do not exist.
+
+### Email delivery
+
+Alertmanager sends through Amazon SES over SMTP. The password lives in a
+Kubernetes Secret mounted into the pod and referenced by
+`smtp_auth_password_file` - it is never written into a values file, and the
+values file carrying the SMTP username is gitignored with a sanitised
+`.example` committed in its place.
+
+The credentials are a dedicated IAM user created by the SES console with a
+single permission, `ses:SendRawEmail`. The alerting path does not borrow the
+Terraform user's authority, and that user was correctly denied when it tried to
+configure SES - least privilege working as intended, including when it is
+inconvenient.
+
+**One hour was lost to a detail worth recording: an SES SMTP password has the
+region baked into it.** The password is derived from an IAM secret key via
+HMAC with the region as one of the inputs, so credentials created in `us-east-1`
+authenticate only against `us-east-1`. The console had defaulted to `us-east-1`
+while every command was aimed at `us-east-2`, and the failure mode is an
+unhelpful `535 Authentication Credentials Invalid` that looks like a wrong
+password. It was found by testing every region and credential-shape combination
+in a loop rather than by guessing again.
+
+### Proving it works
+
+An alerting system that has never fired is an assumption.
+
+The application was scaled to zero deliberately. Prometheus moved
+`VulnTrackDown` to `pending`, then to `firing` after its three-minute window.
+Alertmanager received it and matched it to the `email` receiver, while the
+built-in `Watchdog` heartbeat routed to `null` in the same frame - the routing
+policy visibly doing what it was designed to do.
+
+![VulnTrackDown firing in Prometheus](docs/screenshots/p9-07-alert-firing.png)
+![The whole alert path: fired, routed to email, Watchdog dropped](docs/screenshots/p9-08-alert-routing-and-delivery.png)
+
+### What a real rebuild found
+
+This phase began with a full rebuild from an empty state file, and surfaced six
+defects that are invisible while a cluster is running:
+
+| # | Defect | Why it only appears on a rebuild |
+| --- | --- | --- |
+| 1 | `vulntrack-priorityclass.yaml` missing from the runbook | Added in Phase 7, after the runbook was written. Kubernetes rejects a pod referencing a PriorityClass that does not exist |
+| 2 | ExternalDNS installed before the Load Balancer Controller was ready | The controller registers a mutating webhook for Services; installing one while the other has no running pods fails with `no endpoints available` |
+| 3 | Stale WAF Web ACL ARN hardcoded in the Ingress | Terraform recreates the Web ACL with a new ID; the ALB was created but never reported its address because reconciliation failed on the final association step |
+| 4 | metrics-server not in the runbook | Installed at some point in Phase 7, never written down. `kubectl top` simply stops working |
+| 5 | Grafana memory limit too low | 256Mi is not enough for Grafana 11+, which runs datasource plugins as child processes. The symptom is "Could not load plugin" and empty dashboards, not an obvious OOM |
+| 6 | Teardown order | `terraform destroy` does not delete the ALB, because the Load Balancer Controller created it, not Terraform. The orphaned load balancer holds network interfaces and security groups, the VPC refuses to delete, and the remainder has to be unpicked by hand |
+
+Number 6 is the expensive one. The fix is one line, before the destroy:
+
+```bash
+kubectl delete ingress vulntrack -n istio-system
+```
+
+Phase 6 argued that a rebuild finds things nothing else can. Six more data
+points, and the most costly of them was in the teardown, which Phase 6 never
+exercised.
+
+### Cost, honestly
+
+The cluster was left running across a weekend during this phase. The all-in rate
+is roughly **$0.86/hour** - about $20 a day - of which the EKS control plane and
+the NAT gateway bill whether or not anything is deployed. Instance size barely
+matters next to uptime: moving three nodes from `t3.small` to `t3.medium` added
+about six cents an hour.
+
+The monthly bill ran to roughly ten times the intended budget, and the $10
+billing alarm had been firing for weeks. The alarm worked. The response to it
+did not - the same failure this phase's alert design exists to prevent, arriving
+from an unexpected direction and costing real money.
+
+`terraform destroy` before closing the laptop is now a documented step in the
+runbook rather than an intention.
+
+### Known gaps
+
+| Item | Status |
+| --- | --- |
+| Log shipping (Fluent Bit to CloudWatch) | Not implemented; pod logs still die with the pod |
+| SES deliverability | Messages are accepted by SES but filtered by Gmail. Fixing it properly needs DKIM signing and a custom MAIL FROM domain |
+| Metrics persistence | Prometheus runs without a persistent volume and keeps 24h. The cluster is rebuilt between sessions, so history is session-scoped by design |
+| Certificate expiry monitoring | Still unmonitored. A dev box with an out-of-date CA bundle failed to validate the site's certificate during this phase, and nothing in the monitoring would have reported it |
+| ARNs hardcoded in manifests | The WAF and ACM ARNs should be injected from `terraform output` at apply time rather than committed |
+
+### What Phase 9 demonstrated
+
+The work is not installing Prometheus - that is a Helm command. The work is
+deciding what to measure, what counts as broken, and what is worth waking
+someone for.
+
+Three decisions carry this phase: that 404s from scanners are not failures, that
+a 99% target is the honest one for this architecture, and that an inbox stays
+useful only if almost nothing is allowed into it. Each of those is a judgement
+about the system rather than a configuration setting, and each is written down
+where the next person can disagree with it.
+
 ## CI/CD pipeline
 
 Every push to `main` triggers [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
@@ -1665,6 +1986,10 @@ issues is a meaningful part of what this project demonstrates.
 - [ ] Monitor certificate expiry — cert-manager renews at 30 days remaining, but nothing alerts if it fails silently, and Let's Encrypt ended its expiration notification email service in June 2025. A check against the live endpoint (not a calendar reminder) is the right control.
 - [ ] Audit logging for privileged mutations — Phase 8 found a privilege escalation path, and nothing in the application recorded its use. Role changes, user creation and deletion should write an immutable record (actor, target, old value, new value, timestamp) so that "was this exploited before it was found?" is an answerable question rather than a guess.
 - [ ] Move the JWT out of `sessionStorage` into an httpOnly, `Secure`, `SameSite=Strict` cookie — removes XSS token theft, but introduces CSRF exposure that needs its own mitigation first. Documented as an accepted risk in Phase 8 rather than swapped blindly for a different class of bug.
+- [x] Phase 9 — Observability: kube-prometheus-stack on EKS with Istio sidecar metrics as the SLI source (no application changes), availability and latency SLOs with multi-window burn-rate alerts, Alertmanager routing only purpose-written alerts to email via Amazon SES, and the alert path proven end to end by scaling the app to zero. The rebuild and teardown surfaced six runbook defects, including an orphaned ALB that blocks `terraform destroy`.
+- [ ] Ship pod logs off the cluster (Fluent Bit to CloudWatch Logs) — logs still die with the pod, so a crashed pod takes its own evidence with it.
+- [ ] SES deliverability — messages are accepted by SES but filtered by Gmail. Needs DKIM signing and a custom MAIL FROM domain.
+- [ ] Inject ARNs from `terraform output` at apply time instead of hardcoding the WAF and ACM ARNs in manifests — both go stale on every rebuild.
 - [ ] Next — VPC CNI prefix delegation in Terraform (currently a manual `kubectl` step), Helm installs scripted rather than documented, `terraform-ecs/` moved to the S3 backend, automated Let's Encrypt → ACM renewal (currently a manual bridge), External Secrets Operator instead of manually-synced Kubernetes Secrets, tighter IAM scoping on the remaining broad grants
 
 ---
